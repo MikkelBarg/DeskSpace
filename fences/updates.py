@@ -17,7 +17,7 @@ from .common import APP_NAME, APP_VERSION
 from .dialogs import ask, tell
 from .system import IS_WINDOWS, open_path
 
-REPO = "MikkelFaraos/DeskSpace"
+REPO = "MikkelBarg/DeskSpace"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 DOWNLOADS = f"https://github.com/{REPO}/releases/download/"
 SETUP_NAME = re.compile(r"DeskSpace-Setup-[\d.]+\.exe$")

@@ -59,7 +59,7 @@ def run(report_path):
     def updates():
         from fences.updates import read_release
         tag = {"tag_name": "v99.0", "assets": [{"name": "DeskSpace-Setup-99.0.exe", "browser_download_url":
-               "https://github.com/MikkelFaraos/DeskSpace/releases/download/v99.0/DeskSpace-Setup-99.0.exe"}]}
+               "https://github.com/MikkelBarg/DeskSpace/releases/download/v99.0/DeskSpace-Setup-99.0.exe"}]}
         if not read_release(tag)["url"] or read_release({"tag_name": "v0.1"}):
             raise ValueError("version comparison")
 

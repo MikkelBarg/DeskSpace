@@ -56,8 +56,8 @@ Version: $VERSION
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: MikkelFaraos <MikkelFaraos@users.noreply.github.com>
-Homepage: https://github.com/MikkelFaraos/DeskSpace
+Maintainer: MikkelBarg <MikkelBarg@users.noreply.github.com>
+Homepage: https://github.com/MikkelBarg/DeskSpace
 Installed-Size: $(du -sk "$STAGE" | cut -f1)
 Depends: python3 (>= 3.10), xdg-utils, libglib2.0-bin, libegl1, libgl1, libdbus-1-3, libfontconfig1, libx11-xcb1,
  libxkbcommon0, libxkbcommon-x11-0, libxcb-cursor0, libxcb-icccm4, libxcb-image0, libxcb-keysyms1, libxcb-randr0,
@@ -91,7 +91,7 @@ gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
 EOF
 chmod 755 "$STAGE/DEBIAN/postinst" "$STAGE/DEBIAN/postrm"
 
-printf 'DeskSpace %s\nhttps://github.com/MikkelFaraos/DeskSpace\n' "$VERSION" > "$STAGE/usr/share/doc/deskspace/README"
+printf 'DeskSpace %s\nhttps://github.com/MikkelBarg/DeskSpace\n' "$VERSION" > "$STAGE/usr/share/doc/deskspace/README"
 
 echo "== Package"
 find "$STAGE" -type d -exec chmod 755 {} +
