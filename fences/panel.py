@@ -68,8 +68,11 @@ class Panel(QWidget):
     def build_settings(self, form):
         """Add this panel's own options to its page in the Settings window (a QFormLayout)."""
 
-    def rolled_title(self):
+    def title_text(self):
         return self.name
+
+    def rolled_title(self):
+        return self.title_text()
 
     def on_renamed(self):
         pass
@@ -132,7 +135,7 @@ class Panel(QWidget):
     def paint_title(self, p, r):
         p.setFont(self.title_font)
         p.setPen(QColor(255, 255, 255, 230))
-        title = self.rolled_title() if self.rolled else self.name
+        title = self.rolled_title() if self.rolled else self.title_text()
         text = QFontMetrics(self.title_font).elidedText(title, Qt.ElideRight, r.width() - 24)
         p.drawText(QRect(r.left(), 0, r.width(), self.title_h), Qt.AlignCenter, text)
 

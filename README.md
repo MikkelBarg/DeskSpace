@@ -9,7 +9,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 ### Fences
 
 - **Icon fences:** drag desktop icons and files into a fence. Each fence is a real folder, so your files stay ordinary files.
-- **Folder portals:** show any folder on your PC as a fence.
+- **Folder portals:** show any folder on your PC as a fence. Double-click a subfolder to open it right in the portal; the Up item, Backspace or the mouse's back button takes you back.
 - **Tabs:** drag one fence onto another to combine them into a tab group.
 - **Auto-sort:** sort the desktop into fences by file type in one go, or give a fence patterns like `*.xlsx` or `invoice*` so matching files move into it automatically.
 - **Snapping:** fences snap to screen edges and to each other, with an adjustable distance.
