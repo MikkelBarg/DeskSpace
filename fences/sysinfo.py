@@ -82,6 +82,62 @@ class GpuCounters:
         return load, used
 
 
+class LinuxGpu:
+    """GPU load and VRAM on Linux: AMD cards report both in the kernel's sysfs files; NVIDIA's driver
+    answers through nvidia-smi. Same interface as GpuCounters."""
+
+    DRM = Path("/sys/class/drm")
+
+    def __init__(self):
+        self.name, self.vram_total, self.device, self.nvidia = "", 0, None, False
+        best = None
+        for card in sorted(self.DRM.glob("card[0-9]*")):
+            device = card / "device"
+            if not re.fullmatch(r"card\d+", card.name) or not (device / "gpu_busy_percent").exists():
+                continue
+            total = self._read(device / "mem_info_vram_total") or 0
+            if best is None or total > best[1]:
+                best = (device, total)
+        if best:
+            self.device, self.vram_total = best
+            slot = Path(self.device).resolve().name  # e.g. 0000:04:00.0
+            line = run_output("lspci", "-s", slot, timeout=3).strip()
+            self.name = re.sub(r"\s*\(rev \w+\)$", "", line.split(": ", 1)[-1]) if line else "GPU"
+        elif run_output("nvidia-smi", "-L", timeout=5).strip():
+            self.nvidia = True
+            self.name = run_output("nvidia-smi", "--query-gpu=name", "--format=csv,noheader", timeout=5)
+            self.name = self.name.strip().splitlines()[0] if self.name.strip() else "NVIDIA GPU"
+            used, total = self._nvidia()[1:]
+            self.vram_total = total or 0
+
+    @staticmethod
+    def _read(path):
+        try:
+            return int(Path(path).read_text().strip())
+        except (OSError, ValueError):
+            return None
+
+    def _nvidia(self):
+        out = run_output("nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+                         "--format=csv,noheader,nounits", timeout=5).strip()
+        try:
+            load, used, total = (float(v) for v in out.splitlines()[0].split(","))
+            return load, used * 1024 * 1024, total * 1024 * 1024
+        except (ValueError, IndexError):
+            return None, None, None
+
+    def sample(self):
+        """(load percent, VRAM bytes used), or (None, None)."""
+        if self.device is not None:
+            load = self._read(self.device / "gpu_busy_percent")
+            used = self._read(self.device / "mem_info_vram_used")
+            return (None, None) if load is None else (float(load), used or 0)
+        if self.nvidia:
+            load, used, _ = self._nvidia()
+            return load, used
+        return None, None
+
+
 class HardwareTemps:
     """CPU/GPU temperatures from LibreHardwareMonitor (or OpenHardwareMonitor) when it's running.
     Windows doesn't expose temperatures to normal apps, so without it there are none."""
@@ -269,7 +325,7 @@ class SystemStats(QObject):
         if self.timer.isActive():
             return
         if self.gpu is None:
-            self.gpu = GpuCounters()
+            self.gpu = GpuCounters() if IS_WINDOWS else LinuxGpu()
         psutil.cpu_percent(None)  # prime: the first call has nothing to compare against
         io = psutil.net_io_counters()
         self.net_last = (time.monotonic(), io.bytes_recv, io.bytes_sent)
