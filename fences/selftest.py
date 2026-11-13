@@ -36,6 +36,11 @@ def run(report_path):
         importlib.import_module("winrt.windows.media.control").GlobalSystemMediaTransportControlsSessionManager
         importlib.import_module("winrt.windows.storage.streams").DataReader
 
+    def controllers():
+        # PlayStation controllers on Windows are read through this (Xbox ones through XInput).
+        return f"{len(importlib.import_module('winrt.windows.gaming.input').RawGameController.raw_game_controllers)} " \
+               "raw controller(s) connected"
+
     def com():
         import pythoncom
         import win32com.client
@@ -74,7 +79,8 @@ def run(report_path):
     checks = [("Qt + all DeskSpace modules", modules), ("HTTPS", https), ("Calendar parsing", calendar),
               ("Game launchers", launchers), ("Updates", updates)]
     if sys.platform == "win32":
-        checks += [("Media session API", media), ("COM / Windows Search", com), ("GPU counters", stats)]
+        checks += [("Media session API", media), ("COM / Windows Search", com), ("GPU counters", stats),
+                   ("Controller API", controllers)]
     for name, func in checks:
         check(name, func)
     with open(report_path, "w", encoding="utf-8") as f:
