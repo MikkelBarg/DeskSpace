@@ -2,7 +2,7 @@
 
 Translucent fences and widgets for the Windows desktop. Sort your icons into fences, keep notes, a calendar and system stats on the desktop, launch your games from cover art, and share it all with a few small animals that wander along the tops of your fences.
 
-Everything sits at desktop level, so it never covers your apps. Current version: **1.4.1**. Built with Python and PySide6. Developed and tested on Windows 11, with a [Linux version](#linux) for Ubuntu and Linux Mint.
+Everything sits at desktop level, so it never covers your apps. Current version: **1.4.1**. Built with Python and PySide6. Developed and tested on Windows 11. The Linux version, for Ubuntu and Linux Mint, is on the [`linux-build`](../../tree/linux-build) branch.
 
 ## Features
 
@@ -97,24 +97,6 @@ To run it without installing:
 .venv\Scripts\pythonw.exe deskspace.pyw
 ```
 
-## Linux
-
-DeskSpace also runs on Ubuntu, Linux Mint and other apt-based systems. In the project folder:
-
-```bash
-bash build/install-linux.sh
-```
-
-It asks for your password to install a few system packages, then installs the app for your user in `~/.local/share/deskspace` and starts it. To remove it, run the same script with `--uninstall`. Your data in `~/DeskSpace` is kept.
-
-The Linux version has been tested automatically on Ubuntu with a basic window manager, but not yet by hand on the full Ubuntu or Mint desktops. It differs from Windows in a few ways:
-
-- **Fences** stay behind other windows and appear on every workspace. "Show desktop" may hide them on desktops where a file manager draws the icons.
-- **Not available:** double-clicking the desktop to hide fences, hiding the desktop icons, the global search shortcut, GOG games, and GPU load and VRAM. Use the tray icon to hide fences and open search.
-- **File previews** cover image files only.
-- **File search** needs `locate`, media controls need `playerctl`, and battery levels need `upower`. The install script adds all three.
-- **Console mode** reads Xbox-style controllers through the Linux joystick driver.
-
 ## Getting started
 
 1. Right-click the DeskSpace tray icon, choose **New**, and pick a fence or widget.
@@ -127,7 +109,7 @@ Fences, notes and settings are stored in `%USERPROFILE%\DeskSpace`, and installi
 
 ## Updates
 
-DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Install it from the tray menu, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. The installer is checked against GitHub's checksum, and if Windows blocks it, DeskSpace starts again unchanged. On Linux, the update opens the release page instead.
+DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Install it from the tray menu, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. The installer is checked against GitHub's checksum, and if Windows blocks it, DeskSpace starts again unchanged.
 
 ## Uninstall
 
