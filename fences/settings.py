@@ -251,6 +251,26 @@ class SettingsWindow(QWidget):
                          "but that folder isn't copied. Restoring saves what you have now first."))
         boxes.append(box)
 
+        box, form = group("Monitor setups")
+        form.addRow(checkbox("Remember where the fences are for each monitor setup", app.layout_profiles,
+                             lambda on: app.set_option("layout_profiles", on)))
+        from .layouts import describe
+        current = app.layout_profiles_.current if getattr(app, "layout_profiles_", None) else ""
+        for sig, profile in sorted(app.layouts.items(), key=lambda kv: -kv[1].get("seen", 0)):
+            row = QHBoxLayout()
+            label = QLabel(describe(sig) + ("   (connected now)" if sig == current else ""))
+            label.setToolTip(sig)
+            row.addWidget(label)
+            row.addStretch(1)
+            forget = QPushButton("Forget")
+            forget.clicked.connect(lambda _=False, s=sig: (app.layout_profiles_.forget(s), self.reload_later()))
+            row.addWidget(forget)
+            form.addRow(row)
+        form.addRow(hint("When you plug in or remove a screen, fences go back to where they were the last time you "
+                         "used that setup. A setup you haven't used before keeps the fences where they are and "
+                         "brings back any that ended up off-screen."))
+        boxes.append(box)
+
         box, form = group("File tidy")
         days = QSpinBox()
         days.setRange(0, 60)

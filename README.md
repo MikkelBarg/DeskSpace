@@ -14,6 +14,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 - **Tabs:** drag one fence onto another to combine them into a tab group.
 - **Auto-sort:** sort the desktop into fences by file type in one go, or give a fence patterns like `*.xlsx` or `invoice*` so matching files move into it automatically.
 - **Snapping:** fences snap to screen edges and to each other, with an adjustable distance.
+- **Monitor setups:** fences remember where they were for each set of screens, and go back there when you plug in or remove a monitor.
 - **Roll up:** double-click a title bar to collapse a fence.
 - **Quick-hide:** double-click an empty spot on the desktop, or the tray icon, to hide all fences, and optionally the desktop icons too.
 - **Appearance:** fence colours can follow your wallpaper, or you can pick your own. Title size is adjustable.
