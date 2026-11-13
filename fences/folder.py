@@ -5,7 +5,7 @@ from pathlib import Path
 from PySide6.QtCore import (
     QEvent, QFileInfo, QFileSystemWatcher, QMimeData, QPointF, QRect, QRectF, QSize, Qt, QTimer, QUrl,
 )
-from PySide6.QtGui import QColor, QDrag, QFont, QIcon, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtGui import QColor, QDrag, QFont, QFontMetrics, QIcon, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QPushButton,
 )
@@ -19,6 +19,37 @@ from .panel import Panel
 from .system import FILE_MANAGER, IS_WINDOWS, open_path, shell_icon, show_in_folder
 
 TILE = QSize(104, 156)  # 2:3, the shape of Steam's library covers
+PATH_SEP = " › "
+# How a fence can order its items; folders always come first, like in a file manager.
+SORTS = [("name", "Name (A to Z)"), ("name_desc", "Name (Z to A)"), ("date_new", "Date modified (newest first)"),
+         ("date_old", "Date modified (oldest first)"), ("size_big", "Size (largest first)"),
+         ("size_small", "Size (smallest first)"), ("type", "Type")]
+
+
+def sort_entries(paths, how):
+    def stat(p):
+        try:
+            return p.stat()
+        except OSError:  # vanished or unreadable since it was listed
+            return None
+
+    def mtime(p):
+        s = stat(p)
+        return s.st_mtime if s else 0
+
+    def size(p):
+        s = stat(p)
+        return s.st_size if s and not p.is_dir() else 0
+
+    name = lambda p: p.name.lower()  # noqa: E731
+    keys = {"name": (name, False), "name_desc": (name, True), "date_new": (mtime, True), "date_old": (mtime, False),
+            "size_big": (lambda p: (size(p), p.name.lower()), True),
+            "size_small": (lambda p: (size(p), p.name.lower()), False),
+            "type": (lambda p: (p.suffix.lower(), p.name.lower()), False)}
+    key, reverse = keys.get(how, keys["name"])
+    folders = sorted((p for p in paths if p.is_dir()), key=key, reverse=reverse)
+    files = sorted((p for p in paths if not p.is_dir()), key=key, reverse=reverse)
+    return folders + files
 UP_ROLE = Qt.UserRole + 1  # marks the "Up" item a portal shows while it is inside a subfolder
 
 
@@ -142,6 +173,13 @@ class FenceList(QListWidget):
         if is_up(item):
             item = None
         menu = QMenu()
+        if not item:
+            sort = menu.addMenu("Sort by")
+            for key, label in SORTS:
+                action = sort.addAction(label, lambda k=key: self.fence.set_sort(k))
+                action.setCheckable(True)
+                action.setChecked(key == self.fence.sort)
+            menu.addSeparator()
         if item:
             if not item.isSelected():
                 self.clearSelection()
@@ -208,6 +246,7 @@ class FolderFence(Panel):
         self.kind = "portal" if self.portal else "folder"
         self.view = data.get("view", "icons")
         self.rules = data.get("rules", [])
+        self.sort = data.get("sort", "name")
         self.count = 0
         self.current = self.folder  # a portal can be browsed into its subfolders; this is the one on show
         if not self.portal:
@@ -223,15 +262,86 @@ class FolderFence(Panel):
         return self.list
 
     def content_dict(self):
-        return {"folder": str(self.folder), "view": self.view, "rules": self.rules}
+        return {"folder": str(self.folder), "view": self.view, "rules": self.rules, "sort": self.sort}
 
     def title_text(self):
-        if self.current == self.folder:
-            return self.name
-        return " › ".join([self.name, *self.current.relative_to(self.folder).parts])
+        return PATH_SEP.join(text for text, _ in self.path_parts())
 
     def rolled_title(self):
         return f"{self.title_text()}  ({self.count})"
+
+    # -- the path in the title bar: each folder above the one on show can be clicked to go back to it
+
+    def path_parts(self):
+        """(text, folder to open) for the portal's name and each subfolder below it; the last one is on show."""
+        parts, folder = [(self.name, self.folder)], self.folder
+        if self.current != self.folder:
+            for name in self.current.relative_to(self.folder).parts:
+                folder = folder / name
+                parts.append((name, folder))
+        return [(text, None if folder == self.current else folder) for text, folder in parts]
+
+    def title_runs(self, width):
+        """The title as (text, folder or None, x offset, width) pieces that fit in `width`, centred.
+
+        When the whole path is too long, the folders at the start give way to "…" first, so the
+        folder on show stays readable."""
+        fm = QFontMetrics(self.title_font)
+        parts = self.path_parts()
+        suffix = [(f"  ({self.count})", None)] if self.rolled else []
+
+        def pieces(parts, cut):
+            out = [("…", None), (PATH_SEP, None)] if cut else []
+            for i, part in enumerate(parts):
+                out += [(PATH_SEP, None), part] if i else [part]
+            return out + suffix
+
+        cut = False
+        runs = pieces(parts, cut)
+        while len(parts) > 1 and sum(fm.horizontalAdvance(text) for text, _ in runs) > width:
+            parts, cut = parts[1:], True
+            runs = pieces(parts, cut)
+        if sum(fm.horizontalAdvance(text) for text, _ in runs) > width:  # even the last folder alone is too long
+            runs = [(fm.elidedText("".join(text for text, _ in runs), Qt.ElideLeft, width), None)]
+        total = sum(fm.horizontalAdvance(text) for text, _ in runs)
+        x, out = (width - total) / 2, []
+        for text, target in runs:
+            w = fm.horizontalAdvance(text)
+            out.append((text, target, x, w))
+            x += w
+        return out
+
+    def title_area(self):
+        r = self.rect().adjusted(1, 1, -1, -1)
+        return r.left() + 12, r.width() - 24
+
+    def paint_title(self, p, r):
+        if self.current == self.folder:
+            super().paint_title(p, r)
+            return
+        left, width = self.title_area()
+        fm = QFontMetrics(self.title_font)
+        baseline = (self.title_h - fm.height()) / 2 + fm.ascent()
+        for text, target, x, w in self.title_runs(width):
+            font = QFont(self.title_font)
+            font.setUnderline(target is not None and target == self.hover_link)
+            p.setFont(font)
+            # Folders you can go back to are a little dimmer than the one on show.
+            p.setPen(QColor(255, 255, 255, 190 if target is not None else 230))
+            p.drawText(QPointF(left + x, baseline), text)
+
+    def title_link_at(self, pos):
+        if self.current == self.folder or pos.y() >= self.title_h:
+            return None
+        left, width = self.title_area()
+        for _, target, x, w in self.title_runs(width):
+            if target is not None and left + x <= pos.x() < left + x + w:
+                return target
+        return None
+
+    def title_link_clicked(self, target):
+        self.set_hover_link(None)
+        self.browse(target)
 
     def schedule_refresh(self, *_):
         self.refresh_timer.start()
@@ -248,8 +358,7 @@ class FolderFence(Panel):
         if str(self.current) not in self.watcher.directories():
             self.watcher.addPath(str(self.current))
         try:
-            entries = sorted((p for p in self.current.iterdir() if not is_hidden(p)),
-                             key=lambda p: (not p.is_dir(), p.name.lower()))
+            entries = sort_entries([p for p in self.current.iterdir() if not is_hidden(p)], self.sort)
         except OSError:  # no permission to list this subfolder
             entries = []
         self.list.clear()
@@ -426,6 +535,13 @@ class FolderFence(Panel):
         view.currentIndexChanged.connect(lambda: self.set_view(view.currentData()))
         form.addRow("View", view)
 
+        sort = QComboBox()
+        for key, label in SORTS:
+            sort.addItem(label, key)
+        sort.setCurrentIndex(max(0, sort.findData(self.sort)))
+        sort.currentIndexChanged.connect(lambda: self.set_sort(sort.currentData()))
+        form.addRow("Sort by", sort)
+
         rules = QLineEdit(", ".join(self.rules))
         rules.setPlaceholderText("e.g.  *.xlsx, *.docx, invoice*")
         rules.editingFinished.connect(lambda: self.set_rules(rules.text()))
@@ -442,6 +558,12 @@ class FolderFence(Panel):
 
     def remove_label(self):
         return "Remove portal (files stay)" if self.portal else "Remove fence (items go back to desktop)"
+
+    def set_sort(self, how):
+        if how != self.sort:
+            self.sort = how
+            self.refresh()
+            self.app.schedule_save()
 
     def set_view(self, view):
         self.view = view

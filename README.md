@@ -9,7 +9,8 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 ### Fences
 
 - **Icon fences:** drag desktop icons and files into a fence. Each fence is a real folder, so your files stay ordinary files.
-- **Folder portals:** show any folder on your PC as a fence. Double-click a subfolder to open it right in the portal; the Up item, Backspace or the mouse's back button takes you back.
+- **Folder portals:** show any folder on your PC as a fence. Double-click a subfolder to open it right in the portal; the Up item, Backspace, the mouse's back button or a click on any folder in the title bar takes you back.
+- **Sorting:** sort each fence by name, date modified, size or type, from its right-click menu or its settings. Folders stay first.
 - **Tabs:** drag one fence onto another to combine them into a tab group.
 - **Auto-sort:** sort the desktop into fences by file type in one go, or give a fence patterns like `*.xlsx` or `invoice*` so matching files move into it automatically.
 - **Snapping:** fences snap to screen edges and to each other, with an adjustable distance.
@@ -87,7 +88,7 @@ The Linux version has been tested automatically on Ubuntu with a basic window ma
 
 ## Your data
 
-Fences, notes and settings are stored in `~/DeskSpace`, and installing, updating or uninstalling doesn't touch them. If you're coming from the old DeskFences name, the data folder moves over the first time the app starts.
+Fences, notes and settings are stored in `~/DeskSpace`, and installing, updating or uninstalling doesn't touch them. To move them to another PC or keep a copy, use **Back up…** in Settings; **Restore…** brings a backup back and saves what you had first. If you're coming from the old DeskFences name, the data folder moves over the first time the app starts.
 
 ## Updates
 

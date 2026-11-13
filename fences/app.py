@@ -6,6 +6,8 @@ import fnmatch
 import json
 import os
 import random
+import shlex
+import subprocess
 import sys
 import time
 import uuid
@@ -17,7 +19,7 @@ from PySide6.QtGui import QCursor
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QFileIconProvider, QMenu, QSystemTrayIcon
 
-from . import dialogs, gog, steam
+from . import backup, dialogs, gog, steam
 from .common import (
     APP_NAME, CATEGORIES, CONFIG_PATH, COVER_CACHE, DATA_ROOT, DESKTOP, ENTRY_SCRIPT, LEGACY_CONFIG_PATH, OLD_NAME,
     PUBLIC_DESKTOP, category_for, is_hidden, make_app_icon, move_into, safe_name,
@@ -36,7 +38,7 @@ from .wallpaper import WallpaperWatcher
 from .widgets import ClockFence, MonitorFence, NoteFence, TodoFence
 from .system import (
     IS_WINDOWS, DesktopDoubleClick, drop_startup, hide_path, pin_to_desktop, quote_command,
-    set_desktop_icons_visible, set_startup, single_instance, startup_enabled, user32,
+    release_instance, set_desktop_icons_visible, set_startup, single_instance, startup_enabled, user32,
 )
 
 PANEL_TYPES = {"folder": FolderFence, "portal": FolderFence, "note": NoteFence, "todo": TodoFence,
@@ -81,6 +83,7 @@ class DeskSpace:
         self.alerted = set()  # calendar events the pets already announced
         self.wallpaper_color = None
         self.save_timer = QTimer(singleShot=True, interval=600, timeout=self.save)
+        self.saving_blocked = False  # set while restarting after a restore, so the restored config is kept
 
         cfg = {}
         source = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
@@ -676,6 +679,8 @@ class DeskSpace:
             self.save_timer.start()
 
     def save(self):
+        if self.saving_blocked:
+            return
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         cfg = {name: getattr(self, name) for name in OPTIONS}
         cfg.update({"startup_configured": True, "icons_hidden": self.icons_hidden,
@@ -702,6 +707,69 @@ class DeskSpace:
         self.media.stop()
         self.tray.hide()
         self.qapp.quit()
+
+    # -- backup and restore
+
+    def backup_data(self):
+        target = dialogs.get_save_file("Back up DeskSpace", Path.home() / backup.default_name(),
+                                       "DeskSpace backup (*.zip)")
+        if not target:
+            return
+        target = Path(target)
+        if target.suffix.lower() != ".zip":
+            target = target.with_name(target.name + ".zip")
+        self.save()
+        try:
+            count = backup.create(target)
+        except OSError as e:
+            self.warn(f"The backup couldn't be saved.\n\n{e}")
+            return
+        self.warn(f"Backed up your fences, notes and settings ({count} files) to\n{target}\n\n"
+                  "Folder portals are saved as the folder they show; that folder itself isn't copied.", info=True)
+
+    def restore_data(self):
+        source = dialogs.get_open_file("Restore a DeskSpace backup", Path.home(), "DeskSpace backup (*.zip)")
+        if not source:
+            return
+        try:
+            manifest = backup.check(source)
+        except backup.BackupError as e:
+            self.warn(str(e))
+            return
+        made = manifest.get("created", "").replace("T", " at ")[:19] or "an unknown date"
+        if not dialogs.ask(f"Restore the backup from {made}?\n\nYour fences and settings now are saved to "
+                           f"{DATA_ROOT / backup.BACKUPS} first. Then the backup is unpacked and DeskSpace starts "
+                           "again. Files in your fences that aren't in the backup are kept."):
+            return
+        self.save()
+        try:
+            safety = backup.restore(source)
+        except (OSError, backup.BackupError) as e:
+            # The config we have in memory is still the one from before; saving it puts that back.
+            self.save()
+            self.warn(f"The backup couldn't be restored, so nothing was changed in your settings.\n\n{e}")
+            return
+        if not self.restart():
+            self.warn(f"The backup is restored. Start DeskSpace again to see it.\n\n"
+                      f"What you had before is saved in {safety}.", info=True)
+            self.saving_blocked = True
+            self.quit()
+
+    def restart(self):
+        """Close and start again without saving over config.json. False if the new copy couldn't be started."""
+        self.saving_blocked = True
+        command = self.startup_command()
+        release_instance()
+        try:
+            if IS_WINDOWS:
+                subprocess.Popen(command, creationflags=0x00000008)  # DETACHED_PROCESS
+            else:
+                subprocess.Popen(shlex.split(command), start_new_session=True, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return False
+        self.quit()
+        return True
 
 
 def main():
