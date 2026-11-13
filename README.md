@@ -96,7 +96,7 @@ Fences, notes and settings are stored in `~/DeskSpace`, and installing, updating
 
 ## Updates
 
-DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Clicking it opens the release page, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. To update, get the new version and run `bash build/install-linux.sh` again.
+DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Install it from the tray menu, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. The update is checked against GitHub's checksum, updates the app's Python libraries without asking for your password, and DeskSpace starts again when it's done. If you installed the `.deb` package instead, the update opens the release page.
 
 ## Uninstall
 
