@@ -231,6 +231,19 @@ class SettingsWindow(QWidget):
         form.addRow(update_row)
         boxes.append(box)
 
+        box, form = group("Backup")
+        backup_row = QHBoxLayout()
+        for text, slot in (("Back up…", app.backup_data), ("Restore…", app.restore_data)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            backup_row.addWidget(b)
+        backup_row.addStretch(1)
+        form.addRow(backup_row)
+        form.addRow(hint("Saves your fences, notes, to-dos, settings and the files in your fences to one zip file, "
+                         "for a new PC or in case something goes wrong. Folder portals keep the folder they show, "
+                         "but that folder isn't copied. Restoring saves what you have now first."))
+        boxes.append(box)
+
         box, form = group("File tidy")
         days = QSpinBox()
         days.setRange(0, 60)
