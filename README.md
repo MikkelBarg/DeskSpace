@@ -1,8 +1,8 @@
 # DeskSpace
 
-Translucent fences and widgets for the Windows desktop. Sort your icons into fences, keep notes, a calendar and system stats on the desktop, launch your games from cover art, and share it all with a few small animals that wander along the tops of your fences.
+Translucent fences and widgets for the Linux desktop. Sort your icons into fences, keep notes, a calendar and system stats on the desktop, launch your games from cover art, and share it all with a few small animals that wander along the tops of your fences.
 
-Everything sits at desktop level, so it never covers your apps. Current version: **1.4.1**. Built with Python and PySide6. Developed and tested on Windows 11, with a [Linux version](#linux) for Ubuntu and Linux Mint.
+Everything sits at desktop level, so it never covers your apps. Current version: **1.4.1**. Built with Python and PySide6. This branch is the Linux version, for Ubuntu, Linux Mint and other apt-based systems. The Windows version is on the [`windows-build`](../../tree/windows-build) branch.
 
 ## Features
 
@@ -63,43 +63,7 @@ PlayStation controllers aren't read directly yet. They work if a tool such as St
 
 ## Install
 
-There is no ready-made download yet, so you build DeskSpace yourself. You need [Python 3.13](https://www.python.org/downloads/) and [Inno Setup 6](https://jrsoftware.org/isinfo.php):
-
-```powershell
-winget install JRSoftware.InnoSetup
-```
-
-Then, in the project folder:
-
-```powershell
-py -3.13 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r build\requirements-runtime.txt pillow
-powershell -ExecutionPolicy Bypass -File build\build.ps1
-```
-
-The build downloads the official signed Python runtime, runs a self-test, and creates `dist\DeskSpace-Setup-<version>.exe`. Run that file to install. It needs no admin rights and installs to `%LOCALAPPDATA%\Programs\DeskSpace`.
-
-### If Windows blocks the installer
-
-The setup file isn't signed, so Windows' Smart App Control may refuse to run it. In that case, install from the build output instead. The app runs on the signed Python runtime, which Smart App Control allows, and this does the same job as the setup file:
-
-```powershell
-dist\stage\runtime\python.exe build\install_without_setup.py
-```
-
-Use the same commands to update to a newer version. There's no need to turn Smart App Control off, and Windows can't turn it back on without a reinstall.
-
-### Run it from source
-
-To run it without installing:
-
-```powershell
-.venv\Scripts\pythonw.exe deskspace.pyw
-```
-
-## Linux
-
-DeskSpace also runs on Ubuntu, Linux Mint and other apt-based systems. In the project folder:
+In the project folder:
 
 ```bash
 bash build/install-linux.sh
@@ -107,7 +71,7 @@ bash build/install-linux.sh
 
 It asks for your password to install a few system packages, then installs the app for your user in `~/.local/share/deskspace` and starts it. To remove it, run the same script with `--uninstall`. Your data in `~/DeskSpace` is kept.
 
-The Linux version has been tested automatically on Ubuntu with a basic window manager, but not yet by hand on the full Ubuntu or Mint desktops. It differs from Windows in a few ways:
+The Linux version has been tested automatically on Ubuntu with a basic window manager, but not yet by hand on the full Ubuntu or Mint desktops. It differs from the Windows version in a few ways:
 
 - **Fences** stay behind other windows and appear on every workspace. "Show desktop" may hide them on desktops where a file manager draws the icons.
 - **Not available:** double-clicking the desktop to hide fences, hiding the desktop icons, the global search shortcut, GOG games, and GPU load and VRAM. Use the tray icon to hide fences and open search.
@@ -123,12 +87,12 @@ The Linux version has been tested automatically on Ubuntu with a basic window ma
 
 ## Your data
 
-Fences, notes and settings are stored in `%USERPROFILE%\DeskSpace`, and installing, updating or uninstalling doesn't touch them. If you're coming from the old DeskFences name, the data folder moves over the first time the app starts.
+Fences, notes and settings are stored in `~/DeskSpace`, and installing, updating or uninstalling doesn't touch them. If you're coming from the old DeskFences name, the data folder moves over the first time the app starts.
 
 ## Updates
 
-DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Install it from the tray menu, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. The installer is checked against GitHub's checksum, and if Windows blocks it, DeskSpace starts again unchanged. On Linux, the update opens the release page instead.
+DeskSpace checks GitHub once a day for a new version, and tells you through the tray icon when there is one. Clicking it opens the release page, or use **Check now** in Settings. The check sends nothing about you, and you can turn it off in Settings. To update, get the new version and run `bash build/install-linux.sh` again.
 
 ## Uninstall
 
-Remove DeskSpace in **Settings → Apps**, or with **Uninstall DeskSpace** in the Start menu. Your `DeskSpace` data folder is kept.
+Run `bash build/install-linux.sh --uninstall`. Your `~/DeskSpace` data folder is kept.

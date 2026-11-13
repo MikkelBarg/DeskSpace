@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 
-# Build output and downloads (recreated by build\build.ps1)
+# Build output (recreated by build/build-deb.sh)
 dist/
 build/cache/
 

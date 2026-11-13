@@ -3,7 +3,7 @@ name: Linux test
 
 on:
   push:
-    branches: [linux, main]
+    branches: [linux-build]
   workflow_dispatch:
 
 jobs:
