@@ -49,6 +49,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 - They walk along fences, jump between them and nap when you're away. Drag one to pick it up, or click it to make it happy.
 - With more than one, they greet each other, play chase, follow each other onto fences and nap side by side. A hamster will ride on a bear.
 - Right-click a pet to give it a treat or throw a ball.
+- They react to the computer: a CPU that's working hard, a finished download, music starting (with a Media controls widget) and a low battery. This can be switched off in Settings.
 - They dress up for Halloween, Christmas, New Year and summer.
 - A pet can tell you a minute before a calendar event starts. This needs a calendar link on a clock widget.
 

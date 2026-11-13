@@ -206,6 +206,8 @@ class SettingsWindow(QWidget):
         form.addRow(add_row)
         form.addRow(checkbox("Dress up for the season (Halloween, Christmas, New Year, summer)", app.pet_outfits,
                              lambda on: app.set_option("pet_outfits", on)))
+        form.addRow(checkbox("React to the computer: a busy CPU, finished downloads, music and a low battery",
+                             app.pet_reactions, lambda on: app.set_option("pet_reactions", on)))
         form.addRow(checkbox("Tell me a minute before calendar events start", app.pet_meetings,
                              lambda on: app.set_option("pet_meetings", on)))
         form.addRow(hint("Drag a pet to pick it up, click it to make it happy. They nap when you're away. "
