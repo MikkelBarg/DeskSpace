@@ -26,6 +26,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 - **System monitor:** CPU, RAM, GPU, VRAM, network, disk, uptime, pending Windows updates, and the battery level of Bluetooth devices and controllers. CPU and GPU temperatures appear when LibreHardwareMonitor is running.
 - **Network monitor:** live download and upload speed with a 60-second graph, ping, Wi-Fi name and signal, and your local IP address.
 - **Media controls:** see what's playing and control it.
+- **App dock:** a row of app icons; one click starts an app. Drop apps on it, drag to reorder, or pick them from a list.
 - **Package tracker:** keeps your tracking numbers until the parcels are delivered. Supports PostNord, GLS, DAO, Bring, DHL, UPS and FedEx. Live status needs a free [17TRACK](https://www.17track.net/) API key; without one, a double-click opens the carrier's tracking page.
 
 ### Games
