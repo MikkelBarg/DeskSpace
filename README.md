@@ -35,6 +35,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 
 - **Game tiles:** show a fence as cover art instead of icons.
 - **Steam and GOG:** add your installed games with one click. Covers are found automatically, and GOG games start through GOG Galaxy when it's installed. GOG shortcuts you drag into a fence are recognised too.
+- **Heroic and Epic:** games installed through Heroic (GOG, Epic, Amazon) and the Epic Games Launcher appear in Console mode and can be added to a fence.
 
 ### Tools
 
@@ -56,15 +57,15 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 
 A full-screen home screen for a PC on a TV, made to be used from the sofa. Open it from the tray icon or Settings, or set it to start when you sign in.
 
-- **Game library:** your Steam and GOG games as a big cover grid, most recently played first.
+- **Game library:** your Steam, GOG, Heroic and Epic games as a big cover grid, most recently played first.
 - **System page:** volume, game launchers, minimize, sleep, restart, shut down and exit to desktop.
 - **Game launchers:** open Steam, GOG Galaxy, Epic Games, the EA app, Ubisoft Connect, Battle.net, Amazon Games, Xbox and others you have installed.
 - **Pets:** they walk along the bottom of the screen at double size.
-- **Controls:** an Xbox-style controller, the keyboard or the mouse. The on-screen hints follow whichever you used last.
+- **Controls:** an Xbox-style or PlayStation controller, the keyboard or the mouse. The on-screen hints follow whichever you used last.
 - **Playing:** starting a game steps out of the way, and the console comes back when the game ends.
 - **Stepping away:** minimizing or closing the console window leaves it running in the background. Hold **Back + Start** on the controller, or use the tray icon, to return to it at any time.
 
-PlayStation controllers aren't read directly yet. They work if a tool such as Steam Input or DS4Windows presents them as an Xbox controller.
+PlayStation controllers (DualShock 4 and DualSense) work without extra tools: Cross, Circle, Square and Triangle do what A, B, X and Y do, and Share + Options work as Back + Start.
 
 ## Install
 
