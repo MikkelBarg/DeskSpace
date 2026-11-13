@@ -695,6 +695,16 @@ class DeskSpace:
             if fence.view == "tiles":
                 fence.schedule_refresh()
 
+    def fetch_cover_url(self, key, url):
+        """Download a cover we already know the address of (Heroic's), once, as <key>.jpg."""
+        if key in self.cover_requests:
+            return
+        self.cover_requests.add(key)
+        request = QNetworkRequest(QUrl(url))
+        request.setRawHeader(b"User-Agent", APP_NAME.encode())
+        reply = self.net.get(request)
+        reply.finished.connect(lambda: self._cover_done(key, reply, f"{key}.jpg"))
+
     def fetch_gog_cover(self, game_id):
         """Look up a GOG game's portrait cover in GOG's games database, then download it once."""
         key = f"gog_{game_id}"

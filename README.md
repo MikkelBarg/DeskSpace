@@ -32,6 +32,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 
 - **Game tiles:** show a fence as cover art instead of icons.
 - **Steam and GOG:** add your installed games with one click. Covers are found automatically, and GOG games start through GOG Galaxy when it's installed. GOG shortcuts you drag into a fence are recognised too.
+- **Heroic and Lutris:** games installed through Heroic (GOG, Epic, Amazon) and, on Linux, Lutris get cover tiles in fences and appear in Console mode.
 
 ### Tools
 
@@ -75,9 +76,10 @@ It asks for your password to install a few system packages, then installs the ap
 The Linux version has been tested automatically on Ubuntu with a basic window manager, but not yet by hand on the full Ubuntu or Mint desktops. It differs from the Windows version in a few ways:
 
 - **Fences** stay behind other windows and appear on every workspace. "Show desktop" may hide them on desktops where a file manager draws the icons.
-- **Not available:** double-clicking the desktop to hide fences, hiding the desktop icons and GOG games. Use the tray icon to hide fences.
+- **Not available:** double-clicking the desktop to hide fences, and hiding the desktop icons. Use the tray icon to hide fences.
 - **File previews** cover image files only.
 - **Quick search shortcut** is added to the GNOME or Cinnamon keyboard settings, so it also starts DeskSpace when it isn't running. On other desktops, add a shortcut yourself that runs `deskspace --search`.
+- **GOG and Epic games** come through [Heroic](https://heroicgameslauncher.com/), since GOG Galaxy doesn't run on Linux.
 - **GPU load and VRAM** come from the kernel for AMD cards and from `nvidia-smi` for NVIDIA.
 - **File search** needs `locate`, media controls need `playerctl`, and battery levels need `upower`. The install script adds all three.
 - **Console mode** reads Xbox-style controllers through the Linux joystick driver.
