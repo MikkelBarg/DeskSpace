@@ -34,6 +34,7 @@ from .network import NetworkFence, NetworkStats
 from .packages import PackageFence
 from .pet import PALETTES, SPECIES, Pet
 from .preview import PreviewController
+from .reactions import PetReactions
 from .search import HotkeyListener, SearchPopup
 from .sysinfo import SystemStats
 from .tabs import TabGroup
@@ -60,7 +61,7 @@ OPTIONS = {"locked": False, "snap": True, "snap_distance": 16, "quick_hide": Tru
            "match_wallpaper": True, "previews": True, "search_enabled": True, "search_hotkey": "Ctrl+Shift+Space",
            "pet_enabled": True, "pets": [], "pet_outfits": True, "pet_meetings": True, "track_key": "",
            "keep_delivered_days": 2, "tidy_auto": False, "tidy_days": 2, "tidy_last": 0,
-           "console_autostart": False, "update_check": True, "layout_profiles": True, "layouts": {},
+           "console_autostart": False, "update_check": True, "layout_profiles": True, "layouts": {}, "pet_reactions": True,
            "layout_last": ""}
 PET_NAMES = ["Mochi", "Biscuit", "Pickles", "Nugget", "Pebble", "Clover", "Waffles", "Hazel", "Peanut", "Bramble",
              "Tofu", "Maple", "Juniper", "Muffin", "Pip", "Sprout"]
@@ -168,6 +169,7 @@ class DeskSpace:
         self.instance_server.newConnection.connect(self.on_instance_request)
         self.instance_server.listen(INSTANCE_NAME)
         self.pet_windows = [Pet(self, info) for info in self.pets]
+        self.reactions = PetReactions(self)
         if self.pet_enabled:
             QTimer.singleShot(1500, self.start_pets)  # once the fences they walk on are in place
 
