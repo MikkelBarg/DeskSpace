@@ -1,6 +1,7 @@
 """The DeskSpace application: tray icon, creating/removing panels, tabs, auto-sort, desktop rules,
 quick-hide, quick search, wallpaper colours, the desktop pets and persistence."""
 import copy
+import getpass
 import ctypes
 import fnmatch
 import json
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QRect, QTimer, QUrl
 from PySide6.QtGui import QCursor
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtNetwork import QLocalServer, QLocalSocket, QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QFileIconProvider, QMenu, QSystemTrayIcon
 
 from . import backup, dialogs, gog, steam
@@ -59,6 +60,23 @@ PET_NAMES = ["Mochi", "Biscuit", "Pickles", "Nugget", "Pebble", "Clover", "Waffl
              "Tofu", "Maple", "Juniper", "Muffin", "Pip", "Sprout"]
 # Files still being written by a browser or Office; rules leave them alone until they're final.
 IN_PROGRESS = (".crdownload", ".part", ".partial", ".download", ".tmp")
+
+
+# The running copy listens here, so starting DeskSpace again (e.g. `deskspace --search` from a desktop
+# shortcut) can hand it a request instead of starting a second copy.
+INSTANCE_NAME = f"{APP_NAME}-{getpass.getuser()}"
+
+
+def send_to_running(request):
+    """Pass `request` to the DeskSpace already running; False if none answered."""
+    socket = QLocalSocket()
+    socket.connectToServer(INSTANCE_NAME)
+    if not socket.waitForConnected(1500):
+        return False
+    socket.write(request.encode() + b"\n")
+    socket.waitForBytesWritten(1500)
+    socket.disconnectFromServer()
+    return True
 
 
 class DeskSpace:
@@ -137,6 +155,10 @@ class DeskSpace:
         self.search = SearchPopup(self)
         self.hotkey = HotkeyListener(self.open_search)
         self.apply_hotkey()
+        self.instance_server = QLocalServer()
+        QLocalServer.removeServer(INSTANCE_NAME)  # left behind if we didn't close properly last time
+        self.instance_server.newConnection.connect(self.on_instance_request)
+        self.instance_server.listen(INSTANCE_NAME)
         self.pet_windows = [Pet(self, info) for info in self.pets]
         if self.pet_enabled:
             QTimer.singleShot(1500, self.start_pets)  # once the fences they walk on are in place
@@ -160,7 +182,7 @@ class DeskSpace:
         self.tray.setToolTip(APP_NAME)
         menu = QMenu()
         self.fill_new_menu(menu.addMenu("New"), at_cursor=False)
-        menu.addAction("Search…", self.open_search)
+        menu.addAction("Search…", lambda: self.open_search(force=True))
         menu.addAction("Auto-sort desktop into fences…", self.auto_sort)
         menu.addAction("Tidy files…", self.open_tidy)
         menu.addAction("Console mode", self.enter_console)
@@ -258,16 +280,33 @@ class DeskSpace:
             self.cleanup_window = CleanupWindow()
         self.cleanup_window.open()
 
-    def open_search(self):
-        if self.search_enabled:
+    def open_search(self, force=False):
+        """From the hotkey (only while it's switched on), or with `force` from the tray or a desktop shortcut."""
+        if self.search_enabled or force:
             self.search.open()
 
     def apply_hotkey(self):
-        """(Re)register the quick-search hotkey; returns False if Windows refused it (taken by another app)."""
+        """(Re)register the quick-search hotkey; returns False if Windows refused it (taken by another app),
+        or on Linux if this desktop's keyboard settings couldn't take it."""
         if not self.search_enabled:
-            self.hotkey.unregister()
+            self.hotkey.unregister(permanent=True)
             return True
-        return self.hotkey.register(self.search_hotkey)
+        return self.hotkey.register(self.search_hotkey, f"{self.startup_command()} --search")
+
+    def on_instance_request(self):
+        while self.instance_server.hasPendingConnections():
+            socket = self.instance_server.nextPendingConnection()
+            socket.readyRead.connect(lambda s=socket: self.handle_instance_request(s))
+            socket.disconnected.connect(socket.deleteLater)
+
+    def handle_instance_request(self, socket):
+        while socket.canReadLine():
+            request = bytes(socket.readLine()).decode(errors="replace").strip()
+            if request == "search":
+                QTimer.singleShot(0, lambda: self.open_search(force=True))
+
+    def open_search_on_start(self):
+        QTimer.singleShot(1500, lambda: self.open_search(force=True))
 
     def panels_changed(self):
         """A panel was added or removed: keep the Settings window's list in step."""
@@ -775,7 +814,12 @@ class DeskSpace:
 def main():
     if not IS_WINDOWS:  # Wayland doesn't let apps place windows, so use X11 (XWayland there)
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    search = "--search" in sys.argv
     if not single_instance():
+        if search:
+            from PySide6.QtCore import QCoreApplication
+            QCoreApplication.instance() or QCoreApplication(sys.argv)
+            send_to_running("search")
         return
     if IS_WINDOWS:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
@@ -783,6 +827,8 @@ def main():
     qapp.setQuitOnLastWindowClosed(False)
     qapp.setWindowIcon(make_app_icon())
     app = DeskSpace(qapp)
+    if search:
+        app.open_search_on_start()
 
     def on_quit():
         app.restore_icons()

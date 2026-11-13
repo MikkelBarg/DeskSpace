@@ -158,9 +158,14 @@ class SettingsWindow(QWidget):
         box, form = group("Quick search")
         status = hint("")
 
+        failed = ("That shortcut is already used by another program - try a different one." if IS_WINDOWS else
+                  "This desktop's keyboard settings couldn't take that shortcut. Use Ctrl, Alt, Shift or Super with "
+                  "a letter, digit, F-key or Space, or add a shortcut yourself in the desktop's keyboard settings "
+                  f"that runs:  {app.startup_command()} --search")
+
         def apply_hotkey():
             ok = app.apply_hotkey()
-            status.setText("" if ok else "That shortcut is already used by another program - try a different one.")
+            status.setText("" if ok else failed)
         keys = QKeySequenceEdit(QKeySequence(app.search_hotkey))
         keys.setMaximumSequenceLength(1)
         keys.editingFinished.connect(lambda: (app.set_option("search_hotkey", keys.keySequence().toString()),
@@ -168,20 +173,22 @@ class SettingsWindow(QWidget):
         enabled = checkbox("Open quick search with a keyboard shortcut:", app.search_enabled,
                            lambda on: (app.set_option("search_enabled", on), keys.setEnabled(on), apply_hotkey()))
         keys.setEnabled(app.search_enabled)
+        row = QHBoxLayout()
+        row.addWidget(enabled)
+        row.addWidget(keys)
+        row.addStretch(1)
+        form.addRow(row)
+        form.addRow(status)
         if IS_WINDOWS:
-            row = QHBoxLayout()
-            row.addWidget(enabled)
-            row.addWidget(keys)
-            row.addStretch(1)
-            form.addRow(row)
-            form.addRow(status)
             form.addRow(hint("Finds apps, fence items, desktop items and files. Enter opens, Ctrl+Enter shows it in "
                              "Explorer, Esc closes. Needs a modifier like Ctrl, Alt or Shift."))
-            if app.search_enabled and not app.hotkey.registered:
-                status.setText("That shortcut is already used by another program - try a different one.")
         else:
-            form.addRow(hint("Open it from the tray icon. It finds apps, fence items, desktop items and files. "
-                             "Enter opens, Ctrl+Enter shows it in the file manager, Esc closes."))
+            form.addRow(hint("Finds apps, fence items, desktop items and files. Enter opens, Ctrl+Enter shows it in "
+                             "the file manager, Esc closes. The shortcut is added to your desktop's keyboard "
+                             "settings, so it also starts DeskSpace when it isn't running. The tray icon opens "
+                             "search too."))
+        if app.search_enabled and not app.hotkey.registered:
+            status.setText(failed)
         boxes.append(box)
 
         box, form = group("Desktop pets")

@@ -7,6 +7,9 @@ pinning them to Progman.
 """
 import ctypes
 import ctypes.util
+import os
+import re
+import subprocess
 from pathlib import Path
 
 import psutil
@@ -174,3 +177,108 @@ class DesktopDoubleClick(QObject):
 
     def __init__(self, callback):
         super().__init__()
+
+
+# -- the quick-search shortcut
+# Wayland (and GNOME on X11) won't let an app grab a key for the whole desktop, so the shortcut is
+# added to the desktop's own keyboard settings instead. It runs `deskspace --search`, which hands the
+# request to the running copy (or starts DeskSpace and opens search).
+
+def _run_output(*command, timeout=10):
+    """Like system.run_output (which imports this module, so it can't be used here)."""
+    try:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+SHORTCUT_ID = "deskspace-search"
+GNOME_LIST = ("org.gnome.settings-daemon.plugins.media-keys", "custom-keybindings")
+GNOME_ITEM = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding"
+GNOME_PATH = f"/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/{SHORTCUT_ID}/"
+CINNAMON_LIST = ("org.cinnamon.desktop.keybindings", "custom-list")
+CINNAMON_ITEM = "org.cinnamon.desktop.keybindings.custom-keybinding"
+CINNAMON_PATH = f"/org/cinnamon/desktop/keybindings/custom-keybindings/{SHORTCUT_ID}/"
+
+
+def shortcut_desktop():
+    """'gnome' or 'cinnamon' when we know how to add a shortcut to this desktop, else None."""
+    desktops = os.environ.get("XDG_CURRENT_DESKTOP", "").lower().split(":")
+    # The per-shortcut schemas are "relocatable", which list-schemas leaves out.
+    schemas = set(_run_output("gsettings", "list-relocatable-schemas", timeout=5).split())
+    if any("cinnamon" in d for d in desktops) and CINNAMON_ITEM in schemas:
+        return "cinnamon"
+    if any(d in ("gnome", "ubuntu", "unity", "budgie", "pantheon") for d in desktops) and GNOME_ITEM in schemas:
+        return "gnome"
+    return None
+
+
+def to_accelerator(text):
+    """'Ctrl+Shift+Space' -> '<Control><Shift>space', or None if it can't be a desktop shortcut."""
+    from PySide6.QtGui import QKeySequence
+    seq = QKeySequence(text)
+    if seq.isEmpty():
+        return None
+    combo = seq[0]
+    key, mods = combo.key(), combo.keyboardModifiers()
+    if Qt.Key_A <= key <= Qt.Key_Z:
+        name = chr(int(key)).lower()
+    elif Qt.Key_0 <= key <= Qt.Key_9:
+        name = chr(int(key))
+    elif key == Qt.Key_Space:
+        name = "space"
+    elif Qt.Key_F1 <= key <= Qt.Key_F24:
+        name = f"F{key - Qt.Key_F1 + 1}"
+    else:
+        return None
+    prefix = "".join(tag for flag, tag in ((Qt.ControlModifier, "<Control>"), (Qt.ShiftModifier, "<Shift>"),
+                                           (Qt.AltModifier, "<Alt>"), (Qt.MetaModifier, "<Super>")) if mods & flag)
+    return prefix + name if prefix else None  # a bare key would swallow normal typing everywhere
+
+
+def _gsettings_list(schema, key):
+    out = _run_output("gsettings", "get", schema, key, timeout=5).strip()
+    return re.findall(r"'([^']*)'", out)
+
+
+def _gsettings_set(*args):
+    return subprocess.run(["gsettings", "set", *args], capture_output=True, timeout=5).returncode == 0
+
+
+def set_desktop_shortcut(text, command):
+    """Add (or update) the search shortcut in the desktop's keyboard settings; False if we can't."""
+    desktop, accel = shortcut_desktop(), to_accelerator(text)
+    if not desktop or not accel:
+        return False
+    try:
+        if desktop == "gnome":
+            paths = _gsettings_list(*GNOME_LIST)
+            item = f"{GNOME_ITEM}:{GNOME_PATH}"
+            ok = (_gsettings_set(item, "name", "DeskSpace search") and _gsettings_set(item, "command", command)
+                  and _gsettings_set(item, "binding", accel))
+            if ok and GNOME_PATH not in paths:
+                ok = _gsettings_set(*GNOME_LIST, str(paths + [GNOME_PATH]))
+        else:
+            names = _gsettings_list(*CINNAMON_LIST)
+            item = f"{CINNAMON_ITEM}:{CINNAMON_PATH}"
+            ok = (_gsettings_set(item, "name", "DeskSpace search") and _gsettings_set(item, "command", command)
+                  and _gsettings_set(item, "binding", str([accel.replace("<Control>", "<Primary>")])))
+            if ok and SHORTCUT_ID not in names:
+                ok = _gsettings_set(*CINNAMON_LIST, str(names + [SHORTCUT_ID]))
+        return ok
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def clear_desktop_shortcut():
+    """Take the search shortcut out of the desktop's keyboard settings again."""
+    try:
+        for (schema, key), entry, item, path in ((GNOME_LIST, GNOME_PATH, GNOME_ITEM, GNOME_PATH),
+                                                 (CINNAMON_LIST, SHORTCUT_ID, CINNAMON_ITEM, CINNAMON_PATH)):
+            entries = _gsettings_list(schema, key)
+            if entry in entries:
+                entries.remove(entry)
+                _gsettings_set(schema, key, str(entries) if entries else "@as []")
+                subprocess.run(["gsettings", "reset-recursively", f"{item}:{path}"], capture_output=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        pass

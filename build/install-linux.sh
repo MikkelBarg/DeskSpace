@@ -17,6 +17,9 @@ SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if [ "${1:-}" = "--uninstall" ]; then
     pkill -f "$APP_DIR/app/deskspace.pyw" || true
+    # Take the quick-search shortcut back out of the desktop's keyboard settings.
+    PYTHONPATH="$APP_DIR/app" "$APP_DIR/venv/bin/python" -c \
+        'from fences.linux import clear_desktop_shortcut; clear_desktop_shortcut()' 2> /dev/null || true
     rm -rf "$APP_DIR"
     rm -f "$BIN" "$LAUNCHER" "$ICON" "$AUTOSTART"
     echo "DeskSpace is removed. Your fences and settings are still in ~/DeskSpace."
