@@ -1,6 +1,6 @@
 """Console mode: a full-screen home screen for a PC on a TV, made to be used from the sofa.
 
-Your Steam and GOG games as a big cover grid (recently played first), a System page with volume,
+Your Steam, GOG, Heroic and Lutris games as a big cover grid (recently played first), a System page with volume,
 game launchers and power, and your pets walking along the bottom bar. Works with an Xbox-style
 controller, the keyboard and the mouse. Starting a game gets out of the way; when the game ends the
 console comes back by itself. Minimized or closed from Windows it keeps running in the background,
@@ -18,7 +18,7 @@ from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
-from . import gog, launchers, pet, steam
+from . import gog, launchers, libraries, pet, steam
 from .common import ACCENT, APP_NAME
 from .dialogs import bring_to_front
 from .folder import make_tile
@@ -35,25 +35,35 @@ CHORD_SECONDS = 1.0
 # -- game library
 
 def load_games():
-    """Installed Steam and GOG games, most recently played first, then by name."""
+    """Installed Steam, GOG, Heroic and Lutris games, most recently played first, then by name."""
     games = [{"source": "Steam", "id": appid, "name": name, "played": played}
              for appid, name, played in steam.library()]
     games += [{"source": "GOG", "id": g["id"], "name": g["name"], "played": 0, "game": g}
               for g in gog.installed_games()]
+    galaxy = {g["id"] for g in games if g["source"] == "GOG"}
+    for g in libraries.installed_games():
+        if g["source"] == "Heroic" and g["runner"] == "gog" and g["app"] in galaxy:
+            continue  # the same GOG game installed through Galaxy is already listed
+        g["label"] = f"{g['store']} · {g['source']}" if g["store"] not in (g["source"], "Added") else g["source"]
+        games.append(g)
     return sorted(games, key=lambda g: (-g["played"], g["name"].lower()))
 
 
 def launch(game):
     if game["source"] == "Steam":
         open_path(f"steam://rungameid/{game['id']}")
-    else:
+    elif game["source"] == "GOG":
         gog.run_game(game["game"])
+    else:
+        libraries.launch(game)
 
 
 def is_running(game):
     if game["source"] == "Steam":
         return steam.running_game() == game["id"]
-    return gog.is_running(game["game"])
+    if game["source"] == "GOG":
+        return gog.is_running(game["game"])
+    return libraries.is_running(game)
 
 
 # -- volume, through Windows' Core Audio COM interfaces
@@ -712,10 +722,14 @@ class ConsoleWindow(QWidget):
                 header = None if cover else steam.header_file(game["id"])
                 if not cover:
                     self.app.fetch_cover(game["id"])
-            else:
+            elif game["source"] == "GOG":
                 cover, header = gog.cover_file(game["id"]), None
                 if not cover:
                     self.app.fetch_gog_cover(game["id"])
+            else:
+                cover, header = libraries.cover_file(game), None
+                if not cover and game.get("cover_url"):
+                    self.app.fetch_cover_url(libraries.cover_key(game), game["cover_url"])
             self.covers[key] = make_tile(game["name"], dpr, cover=cover, header=header)
         return self.covers[key]
 
@@ -841,7 +855,8 @@ class ConsoleWindow(QWidget):
             x = self.margin() + QFontMetrics(p.font()).horizontalAdvance(name) + self.u(24)
             p.setFont(self.font_(24))
             p.setPen(DIM)
-            p.drawText(QRectF(x, rect.top(), self.u(120), rect.height()), Qt.AlignLeft | Qt.AlignVCenter, game["source"])
+            p.drawText(QRectF(x, rect.top(), self.u(220), rect.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                       game.get("label", game["source"]))
         x = self.width() - self.margin()
         for button, text in reversed(self.hints()):
             x = self.paint_hint(p, x, rect, button, text)

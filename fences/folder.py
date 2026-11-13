@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMenu, QPushButton,
 )
 
-from . import dialogs, gog, steam
+from . import dialogs, gog, libraries, steam
 from .common import (
     DATA_ROOT, DESKTOP, LIST_STYLE, display_name, is_hidden, local_paths, move_into, moved_path, safe_name,
     unique_path,
@@ -347,6 +347,7 @@ class FolderFence(Panel):
         self.refresh_timer.start()
 
     def refresh(self):
+        self.refresh_count = getattr(self, "refresh_count", 0) + 1
         if not self.portal:
             self.folder.mkdir(parents=True, exist_ok=True)
         if not self.folder.is_dir():  # a portal whose folder was deleted or is on an unplugged drive
@@ -447,6 +448,13 @@ class FolderFence(Panel):
             if cover:
                 return make_tile(name, dpr, cover=cover)
             self.app.fetch_gog_cover(game_id)
+        game = libraries.game_from_shortcut(path, self.library_games()) if path.suffix.lower() == ".url" else None
+        if game:
+            cover = libraries.cover_file(game)
+            if cover:
+                return make_tile(name, dpr, cover=cover)
+            if game.get("cover_url"):
+                self.app.fetch_cover_url(libraries.cover_key(game), game["cover_url"])
         icon = shell_icon(path, jumbo=True) or self.app.icon_provider.icon(QFileInfo(str(path)))
         return make_tile(name, dpr, icon=icon)
 
@@ -555,6 +563,11 @@ class FolderFence(Panel):
             form.addRow("Steam", button("Add installed Steam games", self.add_steam_games))
         if IS_WINDOWS:  # GOG Galaxy and its registry entries only exist there
             form.addRow("GOG", button("Add installed GOG games", self.add_gog_games))
+        others = [name for name, found in (("Heroic", libraries.heroic_root()), ("Lutris", libraries.lutris_db()))
+                  if found]
+        if others:
+            form.addRow(" and ".join(others), button(f"Add installed {' and '.join(others)} games",
+                                                    self.add_library_games))
 
     def remove_label(self):
         return "Remove portal (files stay)" if self.portal else "Remove fence (items go back to desktop)"
@@ -607,6 +620,31 @@ class FolderFence(Panel):
             self.app.warn(f"Added {len(added)} game(s):\n\n" + "\n".join(added), info=True)
         else:
             self.app.warn("All your installed GOG games are already in this fence.", info=True)
+
+    def library_games(self):
+        """Heroic and Lutris games, read once per refresh (each tile would otherwise read them again)."""
+        stamp = getattr(self, "_library_stamp", None)
+        if stamp is None or stamp[0] != self.refresh_count:
+            self._library_stamp = (self.refresh_count, libraries.installed_games())
+        return self._library_stamp[1]
+
+    def add_library_games(self):
+        games = libraries.installed_games()
+        if not games:
+            self.app.warn("No installed Heroic or Lutris games were found.", info=True)
+            return
+        have = set()
+        for p in self.folder.iterdir() if self.folder.is_dir() else []:
+            found = libraries.game_from_shortcut(p, games)
+            if found:
+                have.add((found["source"], found["id"]))
+        added = [libraries.make_shortcut(self.folder, g) and g["name"] for g in games
+                 if (g["source"], g["id"]) not in have]
+        self.refresh()
+        if added:
+            self.app.warn(f"Added {len(added)} game(s):\n\n" + "\n".join(added), info=True)
+        else:
+            self.app.warn("All your installed Heroic and Lutris games are already in this fence.", info=True)
 
     def set_rules(self, text):
         rules = [r.strip() for r in text.replace(";", ",").split(",") if r.strip()]
