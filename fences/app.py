@@ -25,6 +25,7 @@ from .common import (
     APP_NAME, CATEGORIES, CONFIG_PATH, COVER_CACHE, DATA_ROOT, DESKTOP, ENTRY_SCRIPT, LEGACY_CONFIG_PATH, OLD_NAME,
     PUBLIC_DESKTOP, category_for, is_hidden, make_app_icon, move_into, safe_name,
 )
+from .clipboard import ClipboardFence
 from .dock import DockFence
 from .folder import FolderFence
 from .layouts import LayoutProfiles
@@ -46,12 +47,13 @@ from .system import (
 
 PANEL_TYPES = {"folder": FolderFence, "portal": FolderFence, "note": NoteFence, "todo": TodoFence,
                "clock": ClockFence, "monitor": MonitorFence, "media": MediaFence, "packages": PackageFence,
-               "network": NetworkFence, "dock": DockFence, "tabs": TabGroup}
+               "network": NetworkFence, "dock": DockFence,
+               "clipboard": ClipboardFence, "tabs": TabGroup}
 NEW_ITEMS = [("folder", "Fence"), ("portal", "Folder portal…"), ("note", "Sticky note"),
              ("todo", "To-do list"), ("clock", "Clock && calendar"), ("monitor", "System monitor"),
              ("media", "Media controls"), ("packages", "Package tracker"), ("network", "Network monitor"),
-             ("dock", "App dock")]
-DEFAULT_NAMES = {"dock": "Apps", "note": "Note", "todo": "To-do", "clock": "Clock", "monitor": "System", "media": "Now playing",
+             ("dock", "App dock"), ("clipboard", "Clipboard history")]
+DEFAULT_NAMES = {"dock": "Apps", "clipboard": "Clipboard", "note": "Note", "todo": "To-do", "clock": "Clock", "monitor": "System", "media": "Now playing",
                  "packages": "Packages", "network": "Network"}
 # App-wide settings and their defaults (all saved in config.json).
 OPTIONS = {"locked": False, "snap": True, "snap_distance": 16, "quick_hide": True, "hide_icons": True,
