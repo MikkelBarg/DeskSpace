@@ -18,7 +18,7 @@ MAX_PETS = 8
 GENERAL = object()  # selects the General page (its entry in the list is None)
 KIND_NAMES = {"folder": "Fence", "portal": "Folder portal", "note": "Sticky note", "todo": "To-do list",
               "clock": "Clock & calendar", "monitor": "System monitor", "media": "Media controls",
-              "packages": "Package tracker", "network": "Network monitor", "tabs": "Tab group"}
+              "packages": "Package tracker", "network": "Network monitor", "dock": "App dock", "tabs": "Tab group"}
 
 
 def checkbox(text, checked, on_toggle):
