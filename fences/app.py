@@ -27,6 +27,7 @@ from .common import (
 )
 from .dock import DockFence
 from .folder import FolderFence
+from .layouts import LayoutProfiles
 from .media import MediaBackend, MediaFence
 from .network import NetworkFence, NetworkStats
 from .packages import PackageFence
@@ -57,7 +58,8 @@ OPTIONS = {"locked": False, "snap": True, "snap_distance": 16, "quick_hide": Tru
            "match_wallpaper": True, "previews": True, "search_enabled": True, "search_hotkey": "Ctrl+Shift+Space",
            "pet_enabled": True, "pets": [], "pet_outfits": True, "pet_meetings": True, "track_key": "",
            "keep_delivered_days": 2, "tidy_auto": False, "tidy_days": 2, "tidy_last": 0,
-           "console_autostart": False, "update_check": True}
+           "console_autostart": False, "update_check": True, "layout_profiles": True, "layouts": {},
+           "layout_last": ""}
 PET_NAMES = ["Mochi", "Biscuit", "Pickles", "Nugget", "Pebble", "Clover", "Waffles", "Hazel", "Peanut", "Bramble",
              "Tofu", "Maple", "Juniper", "Muffin", "Pip", "Sprout"]
 # Files still being written by a browser or Office; rules leave them alone until they're final.
@@ -150,8 +152,10 @@ class DeskSpace:
         if self.console_autostart:
             QTimer.singleShot(2500, self.enter_console)
         self.updater = Updater(self)
-        # Monitors can still be coming up at login; only rescue off-screen fences once they're settled.
-        QTimer.singleShot(15000, self.rescue_offscreen)
+        # Monitors can still be coming up at login; only move fences for them once they're settled.
+        self.layout_profiles_ = LayoutProfiles(self)
+        self.layout_profiles_.changing = True
+        QTimer.singleShot(15000, self.layout_profiles_.settle)
 
         self.double_click = DesktopDoubleClick(self.on_desktop_double_click)
         self.search = SearchPopup(self)
@@ -732,6 +736,8 @@ class DeskSpace:
     def save(self):
         if self.saving_blocked:
             return
+        if getattr(self, "layout_profiles_", None) is not None:
+            self.layout_profiles_.record()
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         cfg = {name: getattr(self, name) for name in OPTIONS}
         cfg.update({"startup_configured": True, "icons_hidden": self.icons_hidden,
