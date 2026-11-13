@@ -563,8 +563,8 @@ class FolderFence(Panel):
             form.addRow("Steam", button("Add installed Steam games", self.add_steam_games))
         if IS_WINDOWS:  # GOG Galaxy and its registry entries only exist there
             form.addRow("GOG", button("Add installed GOG games", self.add_gog_games))
-        others = [name for name, found in (("Heroic", libraries.heroic_root()), ("Lutris", libraries.lutris_db()))
-                  if found]
+        others = [name for name, found in (("Heroic", libraries.heroic_root()), ("Epic", libraries.epic_manifests()),
+                                           ("Lutris", libraries.lutris_db())) if found]
         if others:
             form.addRow(" and ".join(others), button(f"Add installed {' and '.join(others)} games",
                                                     self.add_library_games))
@@ -622,7 +622,7 @@ class FolderFence(Panel):
             self.app.warn("All your installed GOG games are already in this fence.", info=True)
 
     def library_games(self):
-        """Heroic and Lutris games, read once per refresh (each tile would otherwise read them again)."""
+        """Heroic, Epic and Lutris games, read once per refresh (each tile would otherwise read them again)."""
         stamp = getattr(self, "_library_stamp", None)
         if stamp is None or stamp[0] != self.refresh_count:
             self._library_stamp = (self.refresh_count, libraries.installed_games())
@@ -631,7 +631,7 @@ class FolderFence(Panel):
     def add_library_games(self):
         games = libraries.installed_games()
         if not games:
-            self.app.warn("No installed Heroic or Lutris games were found.", info=True)
+            self.app.warn("No installed Heroic, Epic or Lutris games were found.", info=True)
             return
         have = set()
         for p in self.folder.iterdir() if self.folder.is_dir() else []:
@@ -644,7 +644,7 @@ class FolderFence(Panel):
         if added:
             self.app.warn(f"Added {len(added)} game(s):\n\n" + "\n".join(added), info=True)
         else:
-            self.app.warn("All your installed Heroic and Lutris games are already in this fence.", info=True)
+            self.app.warn("All your installed Heroic, Epic and Lutris games are already in this fence.", info=True)
 
     def set_rules(self, text):
         rules = [r.strip() for r in text.replace(";", ",").split(",") if r.strip()]

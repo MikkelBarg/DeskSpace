@@ -1,5 +1,6 @@
-"""Games from other launchers: Heroic (GOG, Epic, Amazon and its own added games, on Windows and Linux)
-and Lutris (Linux). Both are read from their own files; nothing is changed in them.
+"""Games from other launchers: Heroic (GOG, Epic, Amazon and its own added games, on Windows and Linux),
+the Epic Games Launcher (Windows) and Lutris (Linux). All are read from their own files; nothing is
+changed in them.
 
 Each game is a dict like the console library's: source ("Heroic" or "Lutris"), id, name, played (Unix
 time, 0 if never), plus what's needed to start it, show its cover and tell whether it's running.
@@ -46,19 +47,19 @@ def _played(stamp):
 
 
 def _installed(root):
-    """(runner, app name, folder) for each installed game, from each store's own list."""
+    """(runner, app name, folder, title or "") for each installed game, from each store's own list."""
     gog = _load(root / "gog_store/installed.json") or {}
     for g in gog.get("installed", []) if isinstance(gog, dict) else []:
         if not g.get("is_dlc"):
-            yield "gog", str(g.get("appName", "")), g.get("install_path", "")
+            yield "gog", str(g.get("appName", "")), g.get("install_path", ""), g.get("title", "")
     epic = _load(root / "legendaryConfig/legendary/installed.json") or {}
     for name, g in epic.items() if isinstance(epic, dict) else []:
         if isinstance(g, dict) and not g.get("is_dlc"):
-            yield "legendary", str(g.get("app_name", name)), g.get("install_path", "")
+            yield "legendary", str(g.get("app_name", name)), g.get("install_path", ""), g.get("title", "")
     amazon = _load(root / "nile_store/installed.json") or []
     for g in amazon if isinstance(amazon, list) else amazon.get("installed", []) if isinstance(amazon, dict) else []:
         if isinstance(g, dict):
-            yield "nile", str(g.get("id") or g.get("appName", "")), g.get("path") or g.get("install_path", "")
+            yield "nile", str(g.get("id") or g.get("appName", "")), g.get("path") or g.get("install_path", ""), g.get("title", "")
 
 
 def _library(root):
@@ -89,9 +90,9 @@ def heroic_games():
                       "name": title or app, "store": HEROIC_STORES.get(runner, runner), "folder": folder or "",
                       "played": _played(stamp.get("lastPlayed")), "cover_url": cover or ""})
 
-    for runner, app, folder in _installed(root):
+    for runner, app, folder, title in _installed(root):
         entry = library.get(app, {})
-        add(runner, app, entry.get("title"), folder, entry.get("art_square") or entry.get("art_cover"))
+        add(runner, app, entry.get("title") or title, folder, entry.get("art_square") or entry.get("art_cover"))
     sideload = _load(root / "sideload_apps/library.json") or {}
     for g in sideload.get("games", []) if isinstance(sideload, dict) else []:
         if isinstance(g, dict) and g.get("is_installed", True):
@@ -147,14 +148,51 @@ def lutris_link(game):
     return f"lutris:rungameid/{game['id']}"
 
 
+# -- Epic Games Launcher (Windows)
+
+def epic_manifests():
+    root = Path(os.environ.get("PROGRAMDATA", r"C:\ProgramData")) / "Epic/EpicGamesLauncher/Data/Manifests"
+    return root if IS_WINDOWS and root.is_dir() else None
+
+
+def epic_games(folder=None):
+    """Games installed with the Epic Games Launcher, from its .item manifests (add-ons and unfinished installs left out)."""
+    folder = folder or epic_manifests()
+    if folder is None:
+        return []
+    games = []
+    for item in sorted(Path(folder).glob("*.item")):
+        m = _load(item)
+        if not isinstance(m, dict) or m.get("bIsIncompleteInstall") or not m.get("AppName"):
+            continue
+        categories = [c.lower() for c in m.get("AppCategories", [])]
+        if categories and ("games" not in categories or "addons" in categories):
+            continue
+        if m.get("MainGameAppName") and m["MainGameAppName"] != m["AppName"]:
+            continue  # DLC installed into its game
+        games.append({"source": "Epic", "id": m["AppName"], "name": m.get("DisplayName") or m["AppName"],
+                      "store": "Epic", "folder": m.get("InstallLocation", ""), "played": 0,
+                      "namespace": m.get("CatalogNamespace", ""), "item": m.get("CatalogItemId", "")})
+    return games
+
+
+def epic_link(game):
+    return (f"com.epicgames.launcher://apps/{game['namespace']}%3A{game['item']}%3A{game['id']}"
+            "?action=launch&silent=true")
+
+
 # -- all of them
 
 def installed_games():
-    return heroic_games() + lutris_games()
+    epic = epic_games()
+    native = {g["id"] for g in epic}
+    # The same Epic game installed both ways would show twice; the Epic launcher's own copy wins.
+    heroic = [g for g in heroic_games() if not (g["runner"] == "legendary" and g["app"] in native)]
+    return heroic + epic + lutris_games()
 
 
 def link(game):
-    return heroic_link(game) if game["source"] == "Heroic" else lutris_link(game)
+    return {"Heroic": heroic_link, "Epic": epic_link}.get(game["source"], lutris_link)(game)
 
 
 def launch(game):
@@ -203,7 +241,8 @@ def make_shortcut(folder, game):
 
 
 _LINKS = (re.compile(r"heroic://launch\?appName=([^&\s]+)&runner=(\w+)", re.I),
-          re.compile(r"lutris:rungameid/(\d+)", re.I))
+          re.compile(r"lutris:rungameid/(\d+)", re.I),
+          re.compile(r"com\.epicgames\.launcher://apps/[^%\s]*%3A[^%\s]*%3A([^?\s]+)", re.I))
 
 
 def game_from_shortcut(path, games=None):
@@ -214,8 +253,13 @@ def game_from_shortcut(path, games=None):
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return None
-    heroic, lutris = (r.search(text) for r in _LINKS)
-    if not heroic and not lutris:
+    heroic, lutris, epic = (r.search(text) for r in _LINKS)
+    if heroic:
+        key = ("Heroic", f"{heroic.group(2)}:{heroic.group(1)}")
+    elif lutris:
+        key = ("Lutris", lutris.group(1))
+    elif epic:
+        key = ("Epic", epic.group(1))
+    else:
         return None
-    key = ("Heroic", f"{heroic.group(2)}:{heroic.group(1)}") if heroic else ("Lutris", lutris.group(1))
     return next((g for g in (games if games is not None else installed_games()) if (g["source"], g["id"]) == key), None)
