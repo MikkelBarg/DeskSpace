@@ -61,11 +61,11 @@ A full-screen home screen for a PC on a TV, made to be used from the sofa. Open 
 - **System page:** volume, game launchers, minimize, sleep, restart, shut down and exit to desktop.
 - **Game launchers:** open Steam, GOG Galaxy, Epic Games, the EA app, Ubisoft Connect, Battle.net, Amazon Games, Xbox and others you have installed.
 - **Pets:** they walk along the bottom of the screen at double size.
-- **Controls:** an Xbox-style controller, the keyboard or the mouse. The on-screen hints follow whichever you used last.
+- **Controls:** an Xbox-style or PlayStation controller, the keyboard or the mouse. The on-screen hints follow whichever you used last.
 - **Playing:** starting a game steps out of the way, and the console comes back when the game ends.
 - **Stepping away:** minimizing or closing the console window leaves it running in the background. Hold **Back + Start** on the controller, or use the tray icon, to return to it at any time.
 
-PlayStation controllers aren't read directly yet. They work if a tool such as Steam Input or DS4Windows presents them as an Xbox controller.
+PlayStation controllers (DualShock 4 and DualSense) work without extra tools: Cross, Circle, Square and Triangle do what A, B, X and Y do, and Share + Options work as Back + Start.
 
 ## Install
 
@@ -86,7 +86,7 @@ The Linux version has been tested automatically on Ubuntu with a basic window ma
 - **GOG and Epic games** come through [Heroic](https://heroicgameslauncher.com/), since GOG Galaxy doesn't run on Linux.
 - **GPU load and VRAM** come from the kernel for AMD cards and from `nvidia-smi` for NVIDIA.
 - **File search** needs `locate`, media controls need `playerctl`, and battery levels need `upower`. The install script adds all three.
-- **Console mode** reads Xbox-style controllers through the Linux joystick driver.
+- **Console mode** reads Xbox-style and PlayStation controllers through the Linux joystick driver.
 
 ## Getting started
 
