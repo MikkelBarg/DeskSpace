@@ -35,7 +35,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 
 - **Game tiles:** show a fence as cover art instead of icons.
 - **Steam and GOG:** add your installed games with one click. Covers are found automatically, and GOG games start through GOG Galaxy when it's installed. GOG shortcuts you drag into a fence are recognised too.
-- **Heroic and Lutris:** games installed through Heroic (GOG, Epic, Amazon) and, on Linux, Lutris get cover tiles in fences and appear in Console mode.
+- **Heroic, Epic and Lutris:** games installed through Heroic (GOG, Epic, Amazon), the Epic Games Launcher on Windows and Lutris on Linux appear in Console mode and can be added to a fence.
 
 ### Tools
 
@@ -57,7 +57,7 @@ Everything sits at desktop level, so it never covers your apps. Current version:
 
 A full-screen home screen for a PC on a TV, made to be used from the sofa. Open it from the tray icon or Settings, or set it to start when you sign in.
 
-- **Game library:** your Steam and GOG games as a big cover grid, most recently played first.
+- **Game library:** your Steam, GOG, Heroic, Epic and Lutris games as a big cover grid, most recently played first.
 - **System page:** volume, game launchers, minimize, sleep, restart, shut down and exit to desktop.
 - **Game launchers:** open Steam, GOG Galaxy, Epic Games, the EA app, Ubisoft Connect, Battle.net, Amazon Games, Xbox and others you have installed.
 - **Pets:** they walk along the bottom of the screen at double size.
