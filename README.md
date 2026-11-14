@@ -2,7 +2,7 @@
 
 Translucent fences and widgets for the Linux desktop. Sort your icons into fences, keep notes, a calendar and system stats on the desktop, launch your games from cover art, and share it all with a few small animals that wander along the tops of your fences.
 
-Everything sits at desktop level, so it never covers your apps. Current version: **1.4.1**. Built with Python and PySide6. This branch is the Linux version, for Ubuntu, Linux Mint and other apt-based systems. The Windows version is on the [`windows-build`](../../tree/windows-build) branch.
+Everything sits at desktop level, so it never covers your apps. Current version: **1.5.0**. Built with Python and PySide6. This branch is the Linux version, for Ubuntu, Linux Mint and other apt-based systems. The Windows version is on the [`windows-build`](../../tree/windows-build) branch.
 
 ## Features
 
