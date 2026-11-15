@@ -36,6 +36,11 @@ def run(report_path):
         importlib.import_module("winrt.windows.media.control").GlobalSystemMediaTransportControlsSessionManager
         importlib.import_module("winrt.windows.storage.streams").DataReader
 
+    def controllers():
+        # PlayStation controllers on Windows are read through this (Xbox ones through XInput).
+        return f"{len(importlib.import_module('winrt.windows.gaming.input').RawGameController.raw_game_controllers)} " \
+               "raw controller(s) connected"
+
     def com():
         import pythoncom
         import win32com.client
@@ -58,8 +63,10 @@ def run(report_path):
 
     def updates():
         from fences.updates import read_release
-        tag = {"tag_name": "v99.0", "assets": [{"name": "DeskSpace-Setup-99.0.exe", "browser_download_url":
-               "https://github.com/MikkelFaraos/DeskSpace/releases/download/v99.0/DeskSpace-Setup-99.0.exe"}]}
+        base = "https://github.com/MikkelBarg/DeskSpace/releases/download/v99.0/"
+        tag = {"tag_name": "v99.0", "assets": [  # each system picks its own file
+            {"name": "DeskSpace-Setup-99.0.exe", "browser_download_url": base + "DeskSpace-Setup-99.0.exe"},
+            {"name": "deskspace-linux-99.0.tar.gz", "browser_download_url": base + "deskspace-linux-99.0.tar.gz"}]}
         if not read_release(tag)["url"] or read_release({"tag_name": "v0.1"}):
             raise ValueError("version comparison")
 
@@ -72,7 +79,8 @@ def run(report_path):
     checks = [("Qt + all DeskSpace modules", modules), ("HTTPS", https), ("Calendar parsing", calendar),
               ("Game launchers", launchers), ("Updates", updates)]
     if sys.platform == "win32":
-        checks += [("Media session API", media), ("COM / Windows Search", com), ("GPU counters", stats)]
+        checks += [("Media session API", media), ("COM / Windows Search", com), ("GPU counters", stats),
+                   ("Controller API", controllers)]
     for name, func in checks:
         check(name, func)
     with open(report_path, "w", encoding="utf-8") as f:

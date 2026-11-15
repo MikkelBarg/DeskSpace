@@ -11,6 +11,7 @@ from pathlib import Path
 
 IS_WINDOWS = sys.platform == "win32"
 NO_WINDOW = 0x08000000 if IS_WINDOWS else 0  # subprocess creationflags: no console window
+_instance = None  # the single-instance mutex (Windows) or lock file (Linux) while we hold it
 ROOT_DISK = "C:\\" if IS_WINDOWS else "/"
 FILE_MANAGER = "Explorer" if IS_WINDOWS else "file manager"
 
@@ -100,6 +101,18 @@ def single_instance():
     _instance = QLockFile(str(Path(runtime) / "deskspace.lock"))
     _instance.setStaleLockTime(0)
     return _instance.tryLock(0)
+
+
+def release_instance():
+    """Let a new DeskSpace start while this one is still closing (used to restart after a restore)."""
+    global _instance
+    if _instance is None:
+        return
+    if IS_WINDOWS:
+        ctypes.windll.kernel32.CloseHandle(_instance)
+    else:
+        _instance.unlock()
+    _instance = None
 
 
 # -- start with the system

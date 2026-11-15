@@ -1,24 +1,30 @@
 """Console mode: a full-screen home screen for a PC on a TV, made to be used from the sofa.
 
-Your Steam and GOG games as a big cover grid (recently played first), a System page with volume,
+Your Steam, GOG, Heroic and Lutris games as a big cover grid (recently played first), a System page with volume,
 game launchers and power, and your pets walking along the bottom bar. Works with an Xbox-style
 controller, the keyboard and the mouse. Starting a game gets out of the way; when the game ends the
 console comes back by itself. Minimized or closed from Windows it keeps running in the background,
 and holding Back + Start or using the tray icon brings it back at any time.
+
+PlayStation controllers (DualShock 4, DualSense) work too: on Linux through the kernel's own driver,
+on Windows through Windows.Gaming.Input, with Cross/Circle/Square/Triangle doing what A/B/X/Y do and
+Share + Options as Back + Start.
 """
 import ctypes
 import os
+import re
 import struct
 import subprocess
 import time
 from ctypes import wintypes
 from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
-from . import gog, launchers, pet, steam
+from . import gog, launchers, libraries, pet, steam
 from .common import ACCENT, APP_NAME
 from .dialogs import bring_to_front
 from .folder import make_tile
@@ -35,25 +41,35 @@ CHORD_SECONDS = 1.0
 # -- game library
 
 def load_games():
-    """Installed Steam and GOG games, most recently played first, then by name."""
+    """Installed Steam, GOG, Heroic and Lutris games, most recently played first, then by name."""
     games = [{"source": "Steam", "id": appid, "name": name, "played": played}
              for appid, name, played in steam.library()]
     games += [{"source": "GOG", "id": g["id"], "name": g["name"], "played": 0, "game": g}
               for g in gog.installed_games()]
+    galaxy = {g["id"] for g in games if g["source"] == "GOG"}
+    for g in libraries.installed_games():
+        if g["source"] == "Heroic" and g["runner"] == "gog" and g["app"] in galaxy:
+            continue  # the same GOG game installed through Galaxy is already listed
+        g["label"] = f"{g['store']} · {g['source']}" if g["store"] not in (g["source"], "Added") else g["source"]
+        games.append(g)
     return sorted(games, key=lambda g: (-g["played"], g["name"].lower()))
 
 
 def launch(game):
     if game["source"] == "Steam":
         open_path(f"steam://rungameid/{game['id']}")
-    else:
+    elif game["source"] == "GOG":
         gog.run_game(game["game"])
+    else:
+        libraries.launch(game)
 
 
 def is_running(game):
     if game["source"] == "Steam":
         return steam.running_game() == game["id"]
-    return gog.is_running(game["game"])
+    if game["source"] == "GOG":
+        return gog.is_running(game["game"])
+    return libraries.is_running(game)
 
 
 # -- volume, through Windows' Core Audio COM interfaces
@@ -189,10 +205,25 @@ STICK = 16000
 REPEAT_FIRST, REPEAT_NEXT = 0.38, 0.11
 
 
+def is_playstation(name):
+    """Does a controller's name say it's a DualShock or DualSense? (Copies of the DualShock 4 often just
+    say "Wireless Controller", which Xbox pads say too, after "Xbox".)"""
+    name = name or ""
+    if re.search(r"x-?box|microsoft", name, re.I):
+        return False
+    return bool(re.search(r"sony|playstation|dualshock|dualsense|wireless controller", name, re.I))
+
+
+# Button numbers Linux gives each kind of controller (the kernel's xpad and hid-playstation / hid-sony
+# drivers). PlayStation pads have L2/R2 buttons as well, so Share and Options come after them.
+XBOX_JS_BUTTONS = {0: A, 1: B, 2: X, 3: Y, 4: LB, 5: RB, 6: BACK, 7: START}
+PS_JS_BUTTONS = {0: A, 1: B, 2: Y, 3: X, 4: LB, 5: RB, 8: BACK, 9: START}  # cross, circle, triangle, square
+
+
 class LinuxJoystick:
     """The kernel's joystick device: reads the controller's button and stick changes as they arrive.
-    Button and axis numbers are the ones Xbox-style controllers get from Linux's xpad driver."""
-    BUTTONS = {0: A, 1: B, 2: X, 3: Y, 4: LB, 5: RB, 6: BACK, 7: START}
+    The axes (left stick 0/1, d-pad 6/7) are the same for Xbox-style and PlayStation controllers; the
+    buttons are mapped by the controller's name."""
     EVENT = struct.Struct("IhBB")  # time, value, type, number
     PATH = "/dev/input/js{}"
 
@@ -200,15 +231,32 @@ class LinuxJoystick:
         self.file = None
         self.buttons = 0
         self.axes = {}
+        self.BUTTONS = XBOX_JS_BUTTONS
+        self.name = ""
+
+    @staticmethod
+    def device_name(fd, index):
+        try:
+            import fcntl
+            buf = bytearray(128)
+            fcntl.ioctl(fd, 0x80006A13 | (len(buf) << 16), buf)  # JSIOCGNAME(128)
+            return bytes(buf).split(b"\0", 1)[0].decode(errors="replace")
+        except (OSError, ImportError):
+            try:
+                return Path(f"/sys/class/input/js{index}/device/name").read_text().strip()
+            except OSError:
+                return ""
 
     def connect(self):
         for i in range(4):
             try:
                 self.file = os.open(self.PATH.format(i), os.O_RDONLY | os.O_NONBLOCK)
-                self.buttons, self.axes = 0, {}
-                return True
             except OSError:
                 continue
+            self.buttons, self.axes = 0, {}
+            self.name = self.device_name(self.file, i)
+            self.BUTTONS = PS_JS_BUTTONS if is_playstation(self.name) else XBOX_JS_BUTTONS
+            return True
         return False
 
     def read(self):
@@ -235,8 +283,94 @@ class LinuxJoystick:
         return held | (UP if ly < -STICK or hat_y < 0 else 0) | (DOWN if ly > STICK or hat_y > 0 else 0)
 
 
+# -- PlayStation controllers on Windows (they don't speak XInput)
+
+SONY = 0x054C
+DS4_RAW_BUTTONS = {0: X, 1: A, 2: B, 3: Y, 4: LB, 5: RB, 8: BACK, 9: START}  # square, cross, circle, triangle
+
+
+def raw_button_map(labels):
+    """Button index -> our button, from the labels Windows gives a controller's buttons (CROSS, OPTIONS, ...).
+    Falls back to the DualShock 4's own order when Windows doesn't know the labels."""
+    wanted = {"CROSS": A, "CIRCLE": B, "SQUARE": X, "TRIANGLE": Y, "LEFT_BUMPER": LB, "RIGHT_BUMPER": RB,
+              "SHARE": BACK, "SELECT": BACK, "OPTIONS": START, "START": START, "MENU": START}
+    found = {i: wanted[name] for i, name in enumerate(labels) if name in wanted}
+    return found if {A, B} <= set(found.values()) else DS4_RAW_BUTTONS
+
+
+SWITCH_MOVES = {1: UP, 2: UP | RIGHT, 3: RIGHT, 4: DOWN | RIGHT, 5: DOWN, 6: DOWN | LEFT, 7: LEFT, 8: UP | LEFT}
+
+
+def raw_reading(buttons, switches, axes, mapping):
+    """Our button bits from a RawGameController reading: pressed buttons, the d-pad switch, and the
+    left stick (axes 0 and 1, from 0 to 1 with 0.5 in the middle and 0 at the top)."""
+    held = 0
+    for i, pressed in enumerate(buttons):
+        if pressed and i in mapping:
+            held |= mapping[i]
+    if len(switches):
+        held |= SWITCH_MOVES.get(int(switches[0]), 0)
+    if len(axes) >= 2:
+        lx, ly = axes[0], axes[1]
+        held |= (LEFT if lx < 0.25 else 0) | (RIGHT if lx > 0.75 else 0) | (UP if ly < 0.25 else 0) | (DOWN if ly > 0.75 else 0)
+    return held
+
+
+class WindowsRawPad:
+    """The first PlayStation controller Windows.Gaming.Input knows about, read like an Xbox pad."""
+
+    def __init__(self):
+        self.controller = None
+        self.id = ""
+        self.next_scan = 0.0
+        self.next_check = 0.0
+        try:
+            from winrt.windows.gaming.input import RawGameController
+            self.api = RawGameController
+        except ImportError:  # the library isn't bundled: no PlayStation support, Xbox pads still work
+            self.api = None
+
+    def find(self):
+        """Look for a PlayStation controller (now and then: asking Windows every poll would be wasteful)."""
+        now = time.monotonic()
+        if self.api is None or now < self.next_scan:
+            return False
+        self.next_scan = now + 2
+        try:
+            for c in self.api.raw_game_controllers:
+                labels = [c.get_button_label(i).name for i in range(c.button_count)]
+                if c.hardware_vendor_id == SONY or "CROSS" in labels:
+                    import array
+                    self.controller, self.mapping, self.id = c, raw_button_map(labels), c.non_roamable_id
+                    self.buttons = bytearray(c.button_count)
+                    self.switches = array.array("i", [0] * c.switch_count)
+                    self.axes = array.array("d", [0.5] * c.axis_count)
+                    return True
+        except OSError:
+            pass
+        self.controller = None
+        return False
+
+    def read(self):
+        """Our button bits, or None once the controller is gone."""
+        if self.controller is None:
+            return None
+        try:
+            now = time.monotonic()
+            if now >= self.next_check:  # still connected? (compared by id: WinRT hands out new objects)
+                self.next_check = now + 2
+                if self.id not in {c.non_roamable_id for c in self.api.raw_game_controllers}:
+                    self.controller = None
+                    return None
+            self.controller.get_current_reading(self.buttons, self.switches, self.axes)
+        except (OSError, RuntimeError):
+            self.controller = None
+            return None
+        return raw_reading(self.buttons, self.switches, self.axes, self.mapping)
+
+
 class Gamepad(QObject):
-    """Polls the first connected Xbox-style controller."""
+    """Polls the first connected Xbox-style or PlayStation controller."""
     action = Signal(str)
     home = Signal()  # Back + Start held
 
@@ -244,6 +378,7 @@ class Gamepad(QObject):
         super().__init__(parent)
         self.xinput = None
         self.joystick = None if IS_WINDOWS else LinuxJoystick()
+        self.raw = WindowsRawPad() if IS_WINDOWS else None
         for name in ("xinput1_4", "xinput9_1_0") if IS_WINDOWS else ():
             try:
                 self.xinput = getattr(ctypes.windll, name)
@@ -259,7 +394,7 @@ class Gamepad(QObject):
         self.timer = QTimer(self, interval=25, timeout=self.poll)
 
     def start(self):
-        if self.xinput or self.joystick:
+        if self.xinput or self.joystick or (self.raw and self.raw.api):
             self.timer.start()
 
     def read(self, slot):
@@ -291,9 +426,18 @@ class Gamepad(QObject):
         if not IS_WINDOWS:
             self.poll_linux()
             return
+        if self.slot is None and self.raw and self.raw.controller is not None:
+            buttons = self.raw.read()
+            if buttons is None:
+                self.last, self.held_since, self.chord_since = 0, {}, None
+                return
+            self.handle(buttons, time.monotonic())
+            return
         if self.slot is None:
-            self.slot = self.find()
+            self.slot = self.find() if self.xinput else None
             if self.slot is None:
+                if self.raw:
+                    self.raw.find()
                 return
         state = self.read(self.slot)
         if state is None:  # switched off
@@ -712,10 +856,14 @@ class ConsoleWindow(QWidget):
                 header = None if cover else steam.header_file(game["id"])
                 if not cover:
                     self.app.fetch_cover(game["id"])
-            else:
+            elif game["source"] == "GOG":
                 cover, header = gog.cover_file(game["id"]), None
                 if not cover:
                     self.app.fetch_gog_cover(game["id"])
+            else:
+                cover, header = libraries.cover_file(game), None
+                if not cover and game.get("cover_url"):
+                    self.app.fetch_cover_url(libraries.cover_key(game), game["cover_url"])
             self.covers[key] = make_tile(game["name"], dpr, cover=cover, header=header)
         return self.covers[key]
 
@@ -841,7 +989,8 @@ class ConsoleWindow(QWidget):
             x = self.margin() + QFontMetrics(p.font()).horizontalAdvance(name) + self.u(24)
             p.setFont(self.font_(24))
             p.setPen(DIM)
-            p.drawText(QRectF(x, rect.top(), self.u(120), rect.height()), Qt.AlignLeft | Qt.AlignVCenter, game["source"])
+            p.drawText(QRectF(x, rect.top(), self.u(220), rect.height()), Qt.AlignLeft | Qt.AlignVCenter,
+                       game.get("label", game["source"]))
         x = self.width() - self.margin()
         for button, text in reversed(self.hints()):
             x = self.paint_hint(p, x, rect, button, text)

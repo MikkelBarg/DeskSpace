@@ -104,3 +104,25 @@ def get_folder(title, start):
             return QFileDialog.getExistingDirectory(parent, title, str(start))
     finally:
         open_count -= 1
+
+
+def get_save_file(title, start, file_filter):
+    """The path to save to, or "" if cancelled."""
+    global open_count
+    open_count += 1
+    try:
+        with _anchored() as parent:
+            return QFileDialog.getSaveFileName(parent, title, str(start), file_filter)[0]
+    finally:
+        open_count -= 1
+
+
+def get_open_file(title, start, file_filter):
+    """The chosen file's path, or "" if cancelled."""
+    global open_count
+    open_count += 1
+    try:
+        with _anchored() as parent:
+            return QFileDialog.getOpenFileName(parent, title, str(start), file_filter)[0]
+    finally:
+        open_count -= 1

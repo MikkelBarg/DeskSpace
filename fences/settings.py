@@ -18,7 +18,8 @@ MAX_PETS = 8
 GENERAL = object()  # selects the General page (its entry in the list is None)
 KIND_NAMES = {"folder": "Fence", "portal": "Folder portal", "note": "Sticky note", "todo": "To-do list",
               "clock": "Clock & calendar", "monitor": "System monitor", "media": "Media controls",
-              "packages": "Package tracker", "network": "Network monitor", "tabs": "Tab group"}
+              "packages": "Package tracker", "network": "Network monitor", "dock": "App dock",
+              "clipboard": "Clipboard history", "tabs": "Tab group"}
 
 
 def checkbox(text, checked, on_toggle):
@@ -158,9 +159,14 @@ class SettingsWindow(QWidget):
         box, form = group("Quick search")
         status = hint("")
 
+        failed = ("That shortcut is already used by another program - try a different one." if IS_WINDOWS else
+                  "This desktop's keyboard settings couldn't take that shortcut. Use Ctrl, Alt, Shift or Super with "
+                  "a letter, digit, F-key or Space, or add a shortcut yourself in the desktop's keyboard settings "
+                  f"that runs:  {app.startup_command()} --search")
+
         def apply_hotkey():
             ok = app.apply_hotkey()
-            status.setText("" if ok else "That shortcut is already used by another program - try a different one.")
+            status.setText("" if ok else failed)
         keys = QKeySequenceEdit(QKeySequence(app.search_hotkey))
         keys.setMaximumSequenceLength(1)
         keys.editingFinished.connect(lambda: (app.set_option("search_hotkey", keys.keySequence().toString()),
@@ -168,20 +174,22 @@ class SettingsWindow(QWidget):
         enabled = checkbox("Open quick search with a keyboard shortcut:", app.search_enabled,
                            lambda on: (app.set_option("search_enabled", on), keys.setEnabled(on), apply_hotkey()))
         keys.setEnabled(app.search_enabled)
+        row = QHBoxLayout()
+        row.addWidget(enabled)
+        row.addWidget(keys)
+        row.addStretch(1)
+        form.addRow(row)
+        form.addRow(status)
         if IS_WINDOWS:
-            row = QHBoxLayout()
-            row.addWidget(enabled)
-            row.addWidget(keys)
-            row.addStretch(1)
-            form.addRow(row)
-            form.addRow(status)
             form.addRow(hint("Finds apps, fence items, desktop items and files. Enter opens, Ctrl+Enter shows it in "
                              "Explorer, Esc closes. Needs a modifier like Ctrl, Alt or Shift."))
-            if app.search_enabled and not app.hotkey.registered:
-                status.setText("That shortcut is already used by another program - try a different one.")
         else:
-            form.addRow(hint("Open it from the tray icon. It finds apps, fence items, desktop items and files. "
-                             "Enter opens, Ctrl+Enter shows it in the file manager, Esc closes."))
+            form.addRow(hint("Finds apps, fence items, desktop items and files. Enter opens, Ctrl+Enter shows it in "
+                             "the file manager, Esc closes. The shortcut is added to your desktop's keyboard "
+                             "settings, so it also starts DeskSpace when it isn't running. The tray icon opens "
+                             "search too."))
+        if app.search_enabled and not app.hotkey.registered:
+            status.setText(failed)
         boxes.append(box)
 
         box, form = group("Desktop pets")
@@ -198,6 +206,8 @@ class SettingsWindow(QWidget):
         form.addRow(add_row)
         form.addRow(checkbox("Dress up for the season (Halloween, Christmas, New Year, summer)", app.pet_outfits,
                              lambda on: app.set_option("pet_outfits", on)))
+        form.addRow(checkbox("React to the computer: a busy CPU, finished downloads, music and a low battery",
+                             app.pet_reactions, lambda on: app.set_option("pet_reactions", on)))
         form.addRow(checkbox("Tell me a minute before calendar events start", app.pet_meetings,
                              lambda on: app.set_option("pet_meetings", on)))
         form.addRow(hint("Drag a pet to pick it up, click it to make it happy. They nap when you're away. "
@@ -229,6 +239,39 @@ class SettingsWindow(QWidget):
         update_row.addWidget(QLabel(f"You have version {APP_VERSION}"))
         update_row.addStretch(1)
         form.addRow(update_row)
+        boxes.append(box)
+
+        box, form = group("Backup")
+        backup_row = QHBoxLayout()
+        for text, slot in (("Back up…", app.backup_data), ("Restore…", app.restore_data)):
+            b = QPushButton(text)
+            b.clicked.connect(slot)
+            backup_row.addWidget(b)
+        backup_row.addStretch(1)
+        form.addRow(backup_row)
+        form.addRow(hint("Saves your fences, notes, to-dos, settings and the files in your fences to one zip file, "
+                         "for a new PC or in case something goes wrong. Folder portals keep the folder they show, "
+                         "but that folder isn't copied. Restoring saves what you have now first."))
+        boxes.append(box)
+
+        box, form = group("Monitor setups")
+        form.addRow(checkbox("Remember where the fences are for each monitor setup", app.layout_profiles,
+                             lambda on: app.set_option("layout_profiles", on)))
+        from .layouts import describe
+        current = app.layout_profiles_.current if getattr(app, "layout_profiles_", None) else ""
+        for sig, profile in sorted(app.layouts.items(), key=lambda kv: -kv[1].get("seen", 0)):
+            row = QHBoxLayout()
+            label = QLabel(describe(sig) + ("   (connected now)" if sig == current else ""))
+            label.setToolTip(sig)
+            row.addWidget(label)
+            row.addStretch(1)
+            forget = QPushButton("Forget")
+            forget.clicked.connect(lambda _=False, s=sig: (app.layout_profiles_.forget(s), self.reload_later()))
+            row.addWidget(forget)
+            form.addRow(row)
+        form.addRow(hint("When you plug in or remove a screen, fences go back to where they were the last time you "
+                         "used that setup. A setup you haven't used before keeps the fences where they are and "
+                         "brings back any that ended up off-screen."))
         boxes.append(box)
 
         box, form = group("File tidy")

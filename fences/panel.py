@@ -3,9 +3,11 @@ edge snapping, roll-up, colour and title size. Subclasses supply the content."""
 import ctypes
 from ctypes import wintypes
 
+import time
+
 from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QPainter, QPen
-from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QMenu, QVBoxLayout, QWidget
 
 from . import dialogs
 from .common import APP_NAME, DEFAULT_COLOR, DEFAULT_TITLE_SIZE, EDGE
@@ -41,6 +43,9 @@ class Panel(QWidget):
         self.drop_hover = False
         self.drag_start = None
         self.manual_drag = None  # Linux: (edges, geometry and cursor when the drag began)
+        self.pending_link = None  # (target, press position): a title link pressed, not yet clicked or dragged
+        self.hover_link = None  # the title link under the mouse, drawn underlined
+        self.last_link_click = 0.0
 
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMouseTracking(True)
@@ -68,8 +73,18 @@ class Panel(QWidget):
     def build_settings(self, form):
         """Add this panel's own options to its page in the Settings window (a QFormLayout)."""
 
-    def rolled_title(self):
+    def title_text(self):
         return self.name
+
+    def rolled_title(self):
+        return self.title_text()
+
+    def title_link_at(self, pos):
+        """What a click at `pos` in the title bar should open, or None (then the title bar just moves the panel)."""
+        return None
+
+    def title_link_clicked(self, target):
+        pass
 
     def on_renamed(self):
         pass
@@ -132,7 +147,7 @@ class Panel(QWidget):
     def paint_title(self, p, r):
         p.setFont(self.title_font)
         p.setPen(QColor(255, 255, 255, 230))
-        title = self.rolled_title() if self.rolled else self.name
+        title = self.rolled_title() if self.rolled else self.title_text()
         text = QFontMetrics(self.title_font).elidedText(title, Qt.ElideRight, r.width() - 24)
         p.drawText(QRect(r.left(), 0, r.width(), self.title_h), Qt.AlignCenter, text)
 
@@ -157,7 +172,17 @@ class Panel(QWidget):
         if self.manual_drag:
             self.drag_to(QCursor.pos())
             return
-        edges = self.edges_at(e.position().toPoint())
+        pos = e.position().toPoint()
+        if self.pending_link:  # a pressed title link only becomes a drag once the mouse really moves
+            start = self.pending_link[1]
+            if (pos - start).manhattanLength() >= QApplication.startDragDistance():
+                self.pending_link = None
+                self.set_hover_link(None)
+                self.begin_move(start)
+            return
+        edges = self.edges_at(pos)
+        link = self.title_link_at(pos) if edges == Qt.Edge(0) and not e.buttons() else None
+        self.set_hover_link(link)
         horiz = bool(edges & (Qt.LeftEdge | Qt.RightEdge))
         vert = bool(edges & (Qt.TopEdge | Qt.BottomEdge))
         if horiz and vert:
@@ -167,8 +192,15 @@ class Panel(QWidget):
             self.setCursor(Qt.SizeHorCursor)
         elif vert:
             self.setCursor(Qt.SizeVerCursor)
+        elif link is not None:
+            self.setCursor(Qt.PointingHandCursor)
         else:
             self.unsetCursor()
+
+    def set_hover_link(self, link):
+        if link != self.hover_link:
+            self.hover_link = link
+            self.update()
 
     def nativeEvent(self, event_type, message):
         # Windows sends these continuously during a move/resize drag; adjusting the proposed
@@ -273,6 +305,12 @@ class Panel(QWidget):
         self.setGeometry(r.left, r.top, r.right - r.left, r.bottom - r.top)
 
     def mouseReleaseEvent(self, e):
+        if self.pending_link:
+            target = self.pending_link[0]
+            self.pending_link = None
+            self.last_link_click = time.monotonic()
+            self.title_link_clicked(target)
+            return
         if self.manual_drag:
             self.manual_drag = None
             target = self.merge_target
@@ -291,12 +329,18 @@ class Panel(QWidget):
 
     def leaveEvent(self, _):
         self.unsetCursor()
+        self.set_hover_link(None)
 
     def mousePressEvent(self, e):
         if e.button() != Qt.LeftButton:
             return
         pos = e.position().toPoint()
         edges = self.edges_at(pos)
+        if edges == Qt.Edge(0) and pos.y() < self.title_h:
+            link = self.title_link_at(pos)
+            if link is not None:  # a click opens it; dragging from it still moves the panel
+                self.pending_link = (link, pos)
+                return
         movable = (pos.y() < self.title_h or self.drag_anywhere) and not self.app.locked
         if not IS_WINDOWS:
             if edges != Qt.Edge(0) or movable:
@@ -306,7 +350,20 @@ class Panel(QWidget):
         elif movable:
             self.windowHandle().startSystemMove()
 
+    def begin_move(self, press_pos):
+        """Start moving the panel from a press at `press_pos` that was held back (see pending_link)."""
+        if self.app.locked:
+            return
+        if IS_WINDOWS:
+            self.windowHandle().startSystemMove()
+        else:
+            self.manual_drag = (Qt.Edge(0), self.geometry(), self.mapToGlobal(press_pos))
+            self.drag_to(QCursor.pos())
+
     def mouseDoubleClickEvent(self, e):
+        # The first click of a double-click on a title link already opened it; don't also roll up.
+        if time.monotonic() - self.last_link_click < QApplication.doubleClickInterval() / 1000:
+            return
         if e.position().y() < self.title_h:
             self.toggle_roll()
 

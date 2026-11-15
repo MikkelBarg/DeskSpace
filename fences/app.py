@@ -1,11 +1,14 @@
 """The DeskSpace application: tray icon, creating/removing panels, tabs, auto-sort, desktop rules,
 quick-hide, quick search, wallpaper colours, the desktop pets and persistence."""
 import copy
+import getpass
 import ctypes
 import fnmatch
 import json
 import os
 import random
+import shlex
+import subprocess
 import sys
 import time
 import uuid
@@ -14,20 +17,24 @@ from pathlib import Path
 
 from PySide6.QtCore import QFileSystemWatcher, QRect, QTimer, QUrl
 from PySide6.QtGui import QCursor
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
+from PySide6.QtNetwork import QLocalServer, QLocalSocket, QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QApplication, QFileIconProvider, QMenu, QSystemTrayIcon
 
-from . import dialogs, gog, steam
+from . import backup, dialogs, gog, steam
 from .common import (
     APP_NAME, CATEGORIES, CONFIG_PATH, COVER_CACHE, DATA_ROOT, DESKTOP, ENTRY_SCRIPT, LEGACY_CONFIG_PATH, OLD_NAME,
     PUBLIC_DESKTOP, category_for, is_hidden, make_app_icon, move_into, safe_name,
 )
+from .clipboard import ClipboardFence
+from .dock import DockFence
 from .folder import FolderFence
+from .layouts import LayoutProfiles
 from .media import MediaBackend, MediaFence
 from .network import NetworkFence, NetworkStats
 from .packages import PackageFence
 from .pet import PALETTES, SPECIES, Pet
 from .preview import PreviewController
+from .reactions import PetReactions
 from .search import HotkeyListener, SearchPopup
 from .sysinfo import SystemStats
 from .tabs import TabGroup
@@ -36,27 +43,47 @@ from .wallpaper import WallpaperWatcher
 from .widgets import ClockFence, MonitorFence, NoteFence, TodoFence
 from .system import (
     IS_WINDOWS, DesktopDoubleClick, drop_startup, hide_path, pin_to_desktop, quote_command,
-    set_desktop_icons_visible, set_startup, single_instance, startup_enabled, user32,
+    release_instance, set_desktop_icons_visible, set_startup, single_instance, startup_enabled, user32,
 )
 
 PANEL_TYPES = {"folder": FolderFence, "portal": FolderFence, "note": NoteFence, "todo": TodoFence,
                "clock": ClockFence, "monitor": MonitorFence, "media": MediaFence, "packages": PackageFence,
-               "network": NetworkFence, "tabs": TabGroup}
+               "network": NetworkFence, "dock": DockFence,
+               "clipboard": ClipboardFence, "tabs": TabGroup}
 NEW_ITEMS = [("folder", "Fence"), ("portal", "Folder portal…"), ("note", "Sticky note"),
              ("todo", "To-do list"), ("clock", "Clock && calendar"), ("monitor", "System monitor"),
-             ("media", "Media controls"), ("packages", "Package tracker"), ("network", "Network monitor")]
-DEFAULT_NAMES = {"note": "Note", "todo": "To-do", "clock": "Clock", "monitor": "System", "media": "Now playing",
+             ("media", "Media controls"), ("packages", "Package tracker"), ("network", "Network monitor"),
+             ("dock", "App dock"), ("clipboard", "Clipboard history")]
+DEFAULT_NAMES = {"dock": "Apps", "clipboard": "Clipboard", "note": "Note", "todo": "To-do", "clock": "Clock", "monitor": "System", "media": "Now playing",
                  "packages": "Packages", "network": "Network"}
 # App-wide settings and their defaults (all saved in config.json).
 OPTIONS = {"locked": False, "snap": True, "snap_distance": 16, "quick_hide": True, "hide_icons": True,
            "match_wallpaper": True, "previews": True, "search_enabled": True, "search_hotkey": "Ctrl+Shift+Space",
            "pet_enabled": True, "pets": [], "pet_outfits": True, "pet_meetings": True, "track_key": "",
            "keep_delivered_days": 2, "tidy_auto": False, "tidy_days": 2, "tidy_last": 0,
-           "console_autostart": False, "update_check": True}
+           "console_autostart": False, "update_check": True, "layout_profiles": True, "layouts": {}, "pet_reactions": True,
+           "layout_last": ""}
 PET_NAMES = ["Mochi", "Biscuit", "Pickles", "Nugget", "Pebble", "Clover", "Waffles", "Hazel", "Peanut", "Bramble",
              "Tofu", "Maple", "Juniper", "Muffin", "Pip", "Sprout"]
 # Files still being written by a browser or Office; rules leave them alone until they're final.
 IN_PROGRESS = (".crdownload", ".part", ".partial", ".download", ".tmp")
+
+
+# The running copy listens here, so starting DeskSpace again (e.g. `deskspace --search` from a desktop
+# shortcut) can hand it a request instead of starting a second copy.
+INSTANCE_NAME = f"{APP_NAME}-{getpass.getuser()}"
+
+
+def send_to_running(request):
+    """Pass `request` to the DeskSpace already running; False if none answered."""
+    socket = QLocalSocket()
+    socket.connectToServer(INSTANCE_NAME)
+    if not socket.waitForConnected(1500):
+        return False
+    socket.write(request.encode() + b"\n")
+    socket.waitForBytesWritten(1500)
+    socket.disconnectFromServer()
+    return True
 
 
 class DeskSpace:
@@ -81,6 +108,7 @@ class DeskSpace:
         self.alerted = set()  # calendar events the pets already announced
         self.wallpaper_color = None
         self.save_timer = QTimer(singleShot=True, interval=600, timeout=self.save)
+        self.saving_blocked = False  # set while restarting after a restore, so the restored config is kept
 
         cfg = {}
         source = CONFIG_PATH if CONFIG_PATH.exists() else LEGACY_CONFIG_PATH
@@ -127,14 +155,21 @@ class DeskSpace:
         if self.console_autostart:
             QTimer.singleShot(2500, self.enter_console)
         self.updater = Updater(self)
-        # Monitors can still be coming up at login; only rescue off-screen fences once they're settled.
-        QTimer.singleShot(15000, self.rescue_offscreen)
+        # Monitors can still be coming up at login; only move fences for them once they're settled.
+        self.layout_profiles_ = LayoutProfiles(self)
+        self.layout_profiles_.changing = True
+        QTimer.singleShot(15000, self.layout_profiles_.settle)
 
         self.double_click = DesktopDoubleClick(self.on_desktop_double_click)
         self.search = SearchPopup(self)
         self.hotkey = HotkeyListener(self.open_search)
         self.apply_hotkey()
+        self.instance_server = QLocalServer()
+        QLocalServer.removeServer(INSTANCE_NAME)  # left behind if we didn't close properly last time
+        self.instance_server.newConnection.connect(self.on_instance_request)
+        self.instance_server.listen(INSTANCE_NAME)
         self.pet_windows = [Pet(self, info) for info in self.pets]
+        self.reactions = PetReactions(self)
         if self.pet_enabled:
             QTimer.singleShot(1500, self.start_pets)  # once the fences they walk on are in place
 
@@ -157,7 +192,7 @@ class DeskSpace:
         self.tray.setToolTip(APP_NAME)
         menu = QMenu()
         self.fill_new_menu(menu.addMenu("New"), at_cursor=False)
-        menu.addAction("Search…", self.open_search)
+        menu.addAction("Search…", lambda: self.open_search(force=True))
         menu.addAction("Auto-sort desktop into fences…", self.auto_sort)
         menu.addAction("Tidy files…", self.open_tidy)
         menu.addAction("Console mode", self.enter_console)
@@ -255,16 +290,33 @@ class DeskSpace:
             self.cleanup_window = CleanupWindow()
         self.cleanup_window.open()
 
-    def open_search(self):
-        if self.search_enabled:
+    def open_search(self, force=False):
+        """From the hotkey (only while it's switched on), or with `force` from the tray or a desktop shortcut."""
+        if self.search_enabled or force:
             self.search.open()
 
     def apply_hotkey(self):
-        """(Re)register the quick-search hotkey; returns False if Windows refused it (taken by another app)."""
+        """(Re)register the quick-search hotkey; returns False if Windows refused it (taken by another app),
+        or on Linux if this desktop's keyboard settings couldn't take it."""
         if not self.search_enabled:
-            self.hotkey.unregister()
+            self.hotkey.unregister(permanent=True)
             return True
-        return self.hotkey.register(self.search_hotkey)
+        return self.hotkey.register(self.search_hotkey, f"{self.startup_command()} --search")
+
+    def on_instance_request(self):
+        while self.instance_server.hasPendingConnections():
+            socket = self.instance_server.nextPendingConnection()
+            socket.readyRead.connect(lambda s=socket: self.handle_instance_request(s))
+            socket.disconnected.connect(socket.deleteLater)
+
+    def handle_instance_request(self, socket):
+        while socket.canReadLine():
+            request = bytes(socket.readLine()).decode(errors="replace").strip()
+            if request == "search":
+                QTimer.singleShot(0, lambda: self.open_search(force=True))
+
+    def open_search_on_start(self):
+        QTimer.singleShot(1500, lambda: self.open_search(force=True))
 
     def panels_changed(self):
         """A panel was added or removed: keep the Settings window's list in step."""
@@ -653,6 +705,16 @@ class DeskSpace:
             if fence.view == "tiles":
                 fence.schedule_refresh()
 
+    def fetch_cover_url(self, key, url):
+        """Download a cover we already know the address of (Heroic's), once, as <key>.jpg."""
+        if key in self.cover_requests:
+            return
+        self.cover_requests.add(key)
+        request = QNetworkRequest(QUrl(url))
+        request.setRawHeader(b"User-Agent", APP_NAME.encode())
+        reply = self.net.get(request)
+        reply.finished.connect(lambda: self._cover_done(key, reply, f"{key}.jpg"))
+
     def fetch_gog_cover(self, game_id):
         """Look up a GOG game's portrait cover in GOG's games database, then download it once."""
         key = f"gog_{game_id}"
@@ -676,6 +738,10 @@ class DeskSpace:
             self.save_timer.start()
 
     def save(self):
+        if self.saving_blocked:
+            return
+        if getattr(self, "layout_profiles_", None) is not None:
+            self.layout_profiles_.record()
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         cfg = {name: getattr(self, name) for name in OPTIONS}
         cfg.update({"startup_configured": True, "icons_hidden": self.icons_hidden,
@@ -703,11 +769,79 @@ class DeskSpace:
         self.tray.hide()
         self.qapp.quit()
 
+    # -- backup and restore
+
+    def backup_data(self):
+        target = dialogs.get_save_file("Back up DeskSpace", Path.home() / backup.default_name(),
+                                       "DeskSpace backup (*.zip)")
+        if not target:
+            return
+        target = Path(target)
+        if target.suffix.lower() != ".zip":
+            target = target.with_name(target.name + ".zip")
+        self.save()
+        try:
+            count = backup.create(target)
+        except OSError as e:
+            self.warn(f"The backup couldn't be saved.\n\n{e}")
+            return
+        self.warn(f"Backed up your fences, notes and settings ({count} files) to\n{target}\n\n"
+                  "Folder portals are saved as the folder they show; that folder itself isn't copied.", info=True)
+
+    def restore_data(self):
+        source = dialogs.get_open_file("Restore a DeskSpace backup", Path.home(), "DeskSpace backup (*.zip)")
+        if not source:
+            return
+        try:
+            manifest = backup.check(source)
+        except backup.BackupError as e:
+            self.warn(str(e))
+            return
+        made = manifest.get("created", "").replace("T", " at ")[:19] or "an unknown date"
+        if not dialogs.ask(f"Restore the backup from {made}?\n\nYour fences and settings now are saved to "
+                           f"{DATA_ROOT / backup.BACKUPS} first. Then the backup is unpacked and DeskSpace starts "
+                           "again. Files in your fences that aren't in the backup are kept."):
+            return
+        self.save()
+        try:
+            safety = backup.restore(source)
+        except (OSError, backup.BackupError) as e:
+            # The config we have in memory is still the one from before; saving it puts that back.
+            self.save()
+            self.warn(f"The backup couldn't be restored, so nothing was changed in your settings.\n\n{e}")
+            return
+        if not self.restart():
+            self.warn(f"The backup is restored. Start DeskSpace again to see it.\n\n"
+                      f"What you had before is saved in {safety}.", info=True)
+            self.saving_blocked = True
+            self.quit()
+
+    def restart(self):
+        """Close and start again without saving over config.json. False if the new copy couldn't be started."""
+        self.saving_blocked = True
+        command = self.startup_command()
+        release_instance()
+        try:
+            if IS_WINDOWS:
+                subprocess.Popen(command, creationflags=0x00000008)  # DETACHED_PROCESS
+            else:
+                subprocess.Popen(shlex.split(command), start_new_session=True, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            return False
+        self.quit()
+        return True
+
 
 def main():
     if not IS_WINDOWS:  # Wayland doesn't let apps place windows, so use X11 (XWayland there)
         os.environ.setdefault("QT_QPA_PLATFORM", "xcb")
+    search = "--search" in sys.argv
     if not single_instance():
+        if search:
+            from PySide6.QtCore import QCoreApplication
+            QCoreApplication.instance() or QCoreApplication(sys.argv)
+            send_to_running("search")
         return
     if IS_WINDOWS:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
@@ -715,6 +849,8 @@ def main():
     qapp.setQuitOnLastWindowClosed(False)
     qapp.setWindowIcon(make_app_icon())
     app = DeskSpace(qapp)
+    if search:
+        app.open_search_on_start()
 
     def on_quit():
         app.restore_icons()

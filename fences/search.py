@@ -16,6 +16,9 @@ from .common import DESKTOP, PUBLIC_DESKTOP, display_name, is_hidden
 from .dialogs import bring_to_front
 from .system import IS_WINDOWS, open_path, run_output, shell_icon, show_in_folder, user32
 
+if not IS_WINDOWS:
+    from .system import clear_desktop_shortcut, set_desktop_shortcut
+
 WM_HOTKEY = 0x0312
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN, MOD_NOREPEAT = 0x1, 0x2, 0x4, 0x8, 0x4000
 if IS_WINDOWS:
@@ -52,7 +55,10 @@ def hotkey_to_win32(text):
 
 
 class HotkeyListener(QWidget):
-    """Hidden window that owns the global hotkey."""
+    """Hidden window that owns the global hotkey.
+
+    On Linux the desktop owns it instead: the shortcut goes in the desktop's keyboard settings and runs
+    `command` (DeskSpace with --search), which reaches the running copy through its instance server."""
 
     def __init__(self, callback):
         super().__init__()
@@ -60,14 +66,24 @@ class HotkeyListener(QWidget):
         self.registered = False
         self.winId()
 
-    def register(self, text):
+    def register(self, text, command=None):
+        if not IS_WINDOWS:
+            self.registered = bool(command) and set_desktop_shortcut(text, command)
+            return self.registered
         self.unregister()
         parsed = hotkey_to_win32(text)
         if parsed:
             self.registered = bool(user32.RegisterHotKey(int(self.winId()), 1, *parsed))
         return self.registered
 
-    def unregister(self):
+    def unregister(self, permanent=False):
+        """Let go of the hotkey. On Linux the desktop shortcut stays when DeskSpace just closes (it starts
+        DeskSpace again); `permanent` takes it out of the desktop's settings too."""
+        if not IS_WINDOWS:
+            if permanent:
+                clear_desktop_shortcut()
+            self.registered = False
+            return
         if self.registered:
             user32.UnregisterHotKey(int(self.winId()), 1)
             self.registered = False
