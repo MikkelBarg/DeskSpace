@@ -64,6 +64,37 @@ def pin_to_desktop(hwnd):
         user32.SetWindowLongPtrW(hwnd, -8, progman)  # GWL_HWNDPARENT
 
 
+WM_WINDOWPOSCHANGING = 0x0046
+SWP_NOZORDER = 0x0004
+user32.GetWindow.argtypes = [HWND, wintypes.UINT]
+user32.GetWindow.restype = HWND
+
+
+class WINDOWPOS(ctypes.Structure):
+    _fields_ = [("hwnd", HWND), ("hwndInsertAfter", HWND), ("x", ctypes.c_int), ("y", ctypes.c_int),
+                ("cx", ctypes.c_int), ("cy", ctypes.c_int), ("flags", wintypes.UINT)]
+
+
+def keep_above_desktop(lparam):
+    """Handle a WM_WINDOWPOSCHANGING that changes a pinned window's stacking: put it right above the
+    desktop (Progman) instead of at the very bottom. Returns True when it did, so Qt must not touch it.
+
+    Qt answers WindowStaysOnBottomHint with HWND_BOTTOM. On newer Windows 11 builds the bottom is
+    below Progman, and Win+D raises Progman too, so the fences ended up hidden behind the desktop."""
+    pos = WINDOWPOS.from_address(lparam)
+    if pos.flags & SWP_NOZORDER:
+        return False
+    progman = user32.FindWindowW("Progman", None)
+    if not progman:
+        return False
+    above = user32.GetWindow(progman, 3)  # GW_HWNDPREV: the window stacked right above the desktop
+    if above == pos.hwnd:
+        pos.flags |= SWP_NOZORDER  # already in place
+    else:
+        pos.hwndInsertAfter = above or 0  # 0 = HWND_TOP, when nothing is above the desktop
+    return True
+
+
 def class_name(hwnd):
     buf = ctypes.create_unicode_buffer(64)
     user32.GetClassNameW(hwnd, buf, 64)

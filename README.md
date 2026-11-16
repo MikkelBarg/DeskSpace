@@ -2,14 +2,14 @@
 
 Translucent fences and widgets for the Windows desktop. Sort your icons into fences, keep notes, a calendar and system stats on the desktop, launch your games from cover art, and share it all with a few small animals that wander along the tops of your fences.
 
-Everything sits at desktop level, so it never covers your apps. Current version: **1.5.0**. Built with Python and PySide6. Developed and tested on Windows 11. The Linux version, for Ubuntu and Linux Mint, is on the [`linux-build`](../../tree/linux-build) branch.
+Everything sits at desktop level, so it never covers your apps. Current version: **1.5.1**. Built with Python and PySide6. Developed and tested on Windows 11. The Linux version, for Ubuntu and Linux Mint, is on the [`linux-build`](../../tree/linux-build) branch.
 
 ## Features
 
 ### Fences
 
 - **Icon fences:** drag desktop icons and files into a fence. Each fence is a real folder, so your files stay ordinary files.
-- **Folder portals:** show any folder on your PC as a fence. Double-click a subfolder to open it right in the portal; the Up item, Backspace, the mouse's back button or a click on any folder in the title bar takes you back.
+- **Folder portals:** show any folder on your PC as a fence. Double-click a subfolder to open it right in the portal; the Up item, Backspace, the mouse's back button or a click on any folder in the title bar takes you back. A portal never moves files: dragging files in or out of it copies them, so the folder keeps its own files.
 - **Sorting:** sort each fence by name, date modified, size or type, from its right-click menu or its settings. Folders stay first.
 - **Tabs:** drag one fence onto another to combine them into a tab group.
 - **Auto-sort:** sort the desktop into fences by file type in one go, or give a fence patterns like `*.xlsx` or `invoice*` so matching files move into it automatically.

@@ -10,7 +10,7 @@ from .system import desktop_dir, is_hidden  # noqa: F401 (is_hidden is used thro
 
 APP_NAME = "DeskSpace"
 OLD_NAME = "DeskFences"  # the app's name before 1.1: its data folder and startup entry get moved over
-APP_VERSION = "1.5.0"  # keep in step with build\installer.iss
+APP_VERSION = "1.5.1"  # keep in step with build\installer.iss
 APP_DIR = Path(__file__).resolve().parent.parent
 ENTRY_SCRIPT = APP_DIR / "deskspace.pyw"
 
@@ -123,6 +123,24 @@ def move_into(src, folder):
         return None
     try:
         shutil.move(str(src), str(unique_path(folder, src.name, src.is_dir())))
+        return True
+    except OSError:
+        return False
+
+
+def copy_into(src, folder):
+    """Copy src (a file or a whole folder) into folder, the way move_into moves it. Same return values."""
+    src, folder = Path(src), Path(folder)
+    if not src.exists() or src.parent.resolve() == folder.resolve():
+        return None
+    if src.is_dir() and folder.resolve().is_relative_to(src.resolve()):
+        return None
+    dest = unique_path(folder, src.name, src.is_dir())
+    try:
+        if src.is_dir():
+            shutil.copytree(src, dest, symlinks=True)
+        else:
+            shutil.copy2(src, dest)
         return True
     except OSError:
         return False

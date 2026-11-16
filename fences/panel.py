@@ -17,6 +17,9 @@ from .system import (
 )
 
 if IS_WINDOWS:
+    from .win32 import WM_WINDOWPOSCHANGING, keep_above_desktop
+
+if IS_WINDOWS:
     from .system import cursor_pos
 else:
     from .system import Rect
@@ -206,6 +209,8 @@ class Panel(QWidget):
         # Windows sends these continuously during a move/resize drag; adjusting the proposed
         # rect in place makes the panel snap to monitor edges and other panels live.
         msg = wintypes.MSG.from_address(int(message))
+        if msg.message == WM_WINDOWPOSCHANGING and keep_above_desktop(msg.lParam):
+            return True, 0  # handled: Qt would otherwise send the panel below the desktop
         if msg.message == WM_ENTERSIZEMOVE:
             rc = wintypes.RECT()
             user32.GetWindowRect(msg.hWnd, ctypes.byref(rc))

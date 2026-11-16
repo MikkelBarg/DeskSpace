@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
 
 from . import dialogs, gog, libraries, steam
 from .common import (
-    DATA_ROOT, DESKTOP, LIST_STYLE, display_name, is_hidden, local_paths, move_into, moved_path, safe_name,
-    unique_path,
+    DATA_ROOT, DESKTOP, LIST_STYLE, copy_into, display_name, is_hidden, local_paths, move_into, moved_path,
+    safe_name, unique_path,
 )
 from .panel import Panel
 from .system import FILE_MANAGER, IS_WINDOWS, open_path, shell_icon, show_in_folder
@@ -153,7 +153,10 @@ class FenceList(QListWidget):
         drag = QDrag(self)
         drag.setMimeData(mime)
         drag.setPixmap(self.selectedItems()[0].icon().pixmap(36, 36))
-        drag.exec(Qt.MoveAction | Qt.CopyAction, Qt.MoveAction)
+        if self.fence.portal:  # a portal only looks into its folder: what's dragged out is a copy
+            drag.exec(Qt.CopyAction, Qt.CopyAction)
+        else:
+            drag.exec(Qt.MoveAction | Qt.CopyAction, Qt.MoveAction)
         self.fence.schedule_refresh()
 
     def dragEnterEvent(self, e):
@@ -187,12 +190,17 @@ class FenceList(QListWidget):
             paths = self.selected_paths()
             menu.addAction("Open", lambda: [open_path(p) for p in paths])
             menu.addAction(f"Show in {FILE_MANAGER}", lambda: show_in_folder(paths[0]))
-            menu.addAction("Move to desktop", lambda: self.fence.move_out(paths, DESKTOP))
+            verb = "Copy" if self.fence.portal else "Move"
+            menu.addAction(f"{verb} to desktop", lambda: self.fence.move_out(paths, DESKTOP))
             others = [f for f in self.fence.app.folder_fences() if f is not self.fence]
-            if others:
-                sub = menu.addMenu("Move to fence")
-                for other in others:
-                    sub.addAction(other.name, lambda o=other: self.fence.move_out(paths, o.folder, o))
+            fences = [f for f in others if not f.portal]
+            portals = [f for f in others if f.portal]
+            # Into a fence: moved, unless they come from a portal. Into a portal: always copied.
+            for label, targets in ((f"{verb} to fence", fences), ("Copy to portal", portals)):
+                if targets:
+                    sub = menu.addMenu(label)
+                    for other in targets:
+                        sub.addAction(other.name, lambda o=other: self.fence.move_out(paths, o.current, o))
             menu.addSeparator()
         self.fence.show_menu(e.globalPos(), menu)
 
@@ -460,26 +468,38 @@ class FolderFence(Panel):
 
     # -- moving files
 
-    def receive(self, paths):
-        results = [move_into(p, self.current) for p in paths]
+    # A portal only looks into a folder you chose, so files never move into or out of it: they're copied.
+
+    def receive(self, paths, from_portal=False):
+        copy = self.portal or from_portal
+        results = [(copy_into if copy else move_into)(p, self.current) for p in paths]
         self.refresh()
         if False in results:
-            self.app.warn("Some items could not be moved.\n\nShortcuts shared by all users "
-                          "(Public Desktop) need admin rights, and open files can't be moved.")
+            if copy:
+                self.app.warn("Some items could not be copied (they may be open, or you may not have access).")
+            else:
+                self.app.warn("Some items could not be moved.\n\nShortcuts shared by all users "
+                              "(Public Desktop) need admin rights, and open files can't be moved.")
 
     def move_out(self, paths, target, target_fence=None):
-        results = [move_into(p, target) for p in paths]
+        copy = self.portal or (target_fence is not None and target_fence.portal)
+        results = [(copy_into if copy else move_into)(p, target) for p in paths]
         self.refresh()
         if target_fence:
             target_fence.refresh()
         if False in results:
-            self.app.warn("Some items could not be moved (they may be open in another program).")
+            self.app.warn(f"Some items could not be {'copied' if copy else 'moved'} "
+                          "(they may be open in another program).")
+
+    def copies_drop(self, e):
+        source = e.source()
+        return self.portal or (isinstance(source, FenceList) and source.fence.portal)
 
     # -- drag & drop
 
     def handle_drag_enter(self, e):
         if e.mimeData().hasUrls() and e.source() is not self.list and self.current.is_dir():
-            e.setDropAction(Qt.MoveAction)
+            e.setDropAction(Qt.CopyAction if self.copies_drop(e) else Qt.MoveAction)
             e.accept()
             self.set_drop_hover(True)
         else:
@@ -491,13 +511,14 @@ class FolderFence(Panel):
             e.ignore()
             return
         paths = local_paths(e.mimeData())
+        from_portal = isinstance(e.source(), FenceList) and e.source().fence.portal
         # We move the files ourselves; report "copy" so Explorer doesn't also try to delete the source.
         e.setDropAction(Qt.CopyAction)
         e.accept()
         if isinstance(e.source(), FenceList):
-            QTimer.singleShot(0, lambda: self.receive(paths))
+            QTimer.singleShot(0, lambda: self.receive(paths, from_portal))
         else:
-            self.receive(paths)
+            self.receive(paths, from_portal)
 
     def set_drop_hover(self, on):
         if self.drop_hover != on:
@@ -550,15 +571,16 @@ class FolderFence(Panel):
         sort.currentIndexChanged.connect(lambda: self.set_sort(sort.currentData()))
         form.addRow("Sort by", sort)
 
-        rules = QLineEdit(", ".join(self.rules))
-        rules.setPlaceholderText("e.g.  *.xlsx, *.docx, invoice*")
-        rules.editingFinished.connect(lambda: self.set_rules(rules.text()))
-        form.addRow("Auto-sort rules", rules)
-        hint = QLabel("Files that land on the desktop and match these patterns move into this fence "
-                      "automatically (including matching files already there). Leave empty to turn off.")
-        hint.setWordWrap(True)
-        hint.setEnabled(False)
-        form.addRow("", hint)
+        if not self.portal:  # auto-sort moves files in, and a portal never moves files
+            rules = QLineEdit(", ".join(self.rules))
+            rules.setPlaceholderText("e.g.  *.xlsx, *.docx, invoice*")
+            rules.editingFinished.connect(lambda: self.set_rules(rules.text()))
+            form.addRow("Auto-sort rules", rules)
+            hint = QLabel("Files that land on the desktop and match these patterns move into this fence "
+                          "automatically (including matching files already there). Leave empty to turn off.")
+            hint.setWordWrap(True)
+            hint.setEnabled(False)
+            form.addRow("", hint)
         if steam.steam_root():
             form.addRow("Steam", button("Add installed Steam games", self.add_steam_games))
         if IS_WINDOWS:  # GOG Galaxy and its registry entries only exist there
