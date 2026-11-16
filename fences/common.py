@@ -128,6 +128,24 @@ def move_into(src, folder):
         return False
 
 
+def copy_into(src, folder):
+    """Copy src (a file or a whole folder) into folder, the way move_into moves it. Same return values."""
+    src, folder = Path(src), Path(folder)
+    if not src.exists() or src.parent.resolve() == folder.resolve():
+        return None
+    if src.is_dir() and folder.resolve().is_relative_to(src.resolve()):
+        return None
+    dest = unique_path(folder, src.name, src.is_dir())
+    try:
+        if src.is_dir():
+            shutil.copytree(src, dest, symlinks=True)
+        else:
+            shutil.copy2(src, dest)
+        return True
+    except OSError:
+        return False
+
+
 def display_name(path, limit=28):
     name = path.stem if path.suffix.lower() in (".lnk", ".url", ".desktop") else path.name
     return name if len(name) <= limit else name[:limit - 2] + "…"

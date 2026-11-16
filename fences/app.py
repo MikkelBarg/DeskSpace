@@ -636,7 +636,8 @@ class DeskSpace:
             return
         failed = 0
         for name in order:
-            fence = next((f for f in self.folder_fences() if f.name.lower() == name.lower()), None) \
+            fence = next((f for f in self.folder_fences()
+                          if not f.portal and f.name.lower() == name.lower()), None) \
                 or self.new_fence(name)
             failed += sum(move_into(p, fence.folder) is False for p in plan[name])
             fence.refresh()
@@ -646,6 +647,8 @@ class DeskSpace:
     def rule_target(self, path):
         name = path.name.lower()
         for fence in self.folder_fences():
+            if fence.portal:  # portals never move files in, even with rules saved from before
+                continue
             if any(fnmatch.fnmatch(name, pattern.lower()) for pattern in fence.rules):
                 return fence
         return None
